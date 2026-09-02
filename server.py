@@ -51,6 +51,11 @@ DEFAULT_CONFIG = {
         "barcode_height": 150,
         "copies_default": 1,
     },
+    "ui": {
+        "slots": 10,
+        "theme": "system",
+        "scale": 100,
+    },
     "diagnostics_commands": [
         ["ioregentry", "AppleSmartBattery"],
         ["diagnostics", "GasGauge"],
@@ -100,7 +105,7 @@ def list_windows_printers():
     try:
         p = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
-             "Get-Printer | Select-Object Name,DriverName,PortName | "
+             "Get-Printer | Select-Object Name,DriverName,PortName,PrinterStatus | "
              "ConvertTo-Json -Compress"],
             capture_output=True, text=True, timeout=20,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
@@ -112,11 +117,34 @@ def list_windows_printers():
             if d.get("Name"):
                 out.append({"name": d["Name"],
                             "driver": d.get("DriverName") or "",
-                            "port": d.get("PortName") or ""})
+                            "port": d.get("PortName") or "",
+                            "status": str(d.get("PrinterStatus") or "")})
         return out
     except Exception as e:
         print(f"[impressoras] {e}")
         return []
+
+
+BUSY_PRINTING = False
+
+
+def printer_health():
+    """online | busy | offline  — apenas leitura, nao mexe na impressao."""
+    if BUSY_PRINTING:
+        return "busy"
+    name = CONFIG.get("printer_name", "")
+    if not name:
+        return "offline"
+    for p in PRINTERS:
+        if p["name"] == name:
+            s = p.get("status", "").lower()
+            if any(k in s for k in ("offline", "error", "unavailable", "not available")):
+                return "offline"
+            if any(k in s for k in ("printing", "busy", "processing", "paused",
+                                    "paper", "toner", "warming")):
+                return "busy"
+            return "online"
+    return "offline"      # configurada mas nao aparece na lista do Windows
 
 
 def refresh_printers():
@@ -387,7 +415,6 @@ def get_device_info(udid):
         "color_name": None,
         "color_hex": None,
         "ios": None,
-        "battery_charge": None,      # % de carga atual
         "battery_health": None,      # % de saude (capacidade maxima)
         "cycle_count": None,
         "paired": True,
@@ -430,18 +457,6 @@ def get_device_info(udid):
         if rc2 == 0:
             cap_bytes = parse_plist_or_regex(out2).get("TotalDiskCapacity")
     rec["capacity"] = capacity_str(cap_bytes) or None
-
-    # carga atual
-    rc, out, err = run_tool(
-        "ideviceinfo", ["-u", udid, "-q", "com.apple.mobile.battery", "-x"]
-    )
-    if rc == 0:
-        batt = parse_plist_or_regex(out)
-        if "BatteryCurrentCapacity" in batt:
-            try:
-                rec["battery_charge"] = int(batt["BatteryCurrentCapacity"])
-            except (TypeError, ValueError):
-                pass
 
     # saude + ciclos via interface de diagnostico
     _fill_battery_diagnostics(udid, rec)
@@ -788,8 +803,12 @@ LAST_SCAN = 0.0
 
 def poller():
     global LAST_SCAN
+    cycle = 0
     while True:
         try:
+            cycle += 1
+            if cycle % 5 == 1:          # status da impressora a cada ~15 s
+                refresh_printers()
             udids = list_udids()
             with LOCK:
                 for u in list(DEVICES):
@@ -874,7 +893,10 @@ class Handler(BaseHTTPRequestHandler):
                         for key in sorted(DEVICES)]
             self._send(200, {"devices": devs, "printer": CONFIG["printer_name"],
                              "language_effective": resolve_language(),
-                             "label": CONFIG["label"], "last_scan": LAST_SCAN})
+                             "printer_status": printer_health(),
+                             "label": CONFIG["label"],
+                             "ui": CONFIG.get("ui", {}),
+                             "last_scan": LAST_SCAN})
         elif u.path == "/api/printers":
             names = [p["name"] for p in refresh_printers()]
             self._send(200, {"printers": names,
@@ -900,6 +922,7 @@ class Handler(BaseHTTPRequestHandler):
             self._static(u.path)
 
     def do_POST(self):
+        global BUSY_PRINTING
         u = urlparse(self.path)
         body = self._read_json()
         if u.path == "/api/refresh":
@@ -924,10 +947,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"ok": False, "msg": "aparelho sem nº de serie lido ainda"})
                 return
             data = build_label(rec, copies)
+            BUSY_PRINTING = True
             try:
                 ok, msg = print_raw(data)
             except Exception as e:
                 ok, msg = False, str(e)
+            finally:
+                BUSY_PRINTING = False
             self._send(200, {"ok": ok, "msg": msg, "label": data})
         elif u.path == "/api/print-bulk":
             copies = body.get("copies", CONFIG["label"].get("copies_default", 1))
@@ -939,19 +965,26 @@ class Handler(BaseHTTPRequestHandler):
                                if x in DEVICES and DEVICES[x].get("serial")]
                 recs = [dict(DEVICES[x]) for x in targets]
             results = []
-            for rec in recs:
-                try:
-                    ok, msg = print_raw(build_label(rec, copies))
-                except Exception as e:
-                    ok, msg = False, str(e)
-                results.append({"udid": rec["udid"], "ok": ok, "msg": msg})
-                time.sleep(0.4)          # respiro para o spooler / impressora
+            BUSY_PRINTING = True
+            try:
+                for rec in recs:
+                    try:
+                        ok, msg = print_raw(build_label(rec, copies))
+                    except Exception as e:
+                        ok, msg = False, str(e)
+                    results.append({"udid": rec["udid"], "ok": ok, "msg": msg})
+                    time.sleep(0.4)      # respiro para o spooler / impressora
+            finally:
+                BUSY_PRINTING = False
             self._send(200, {"results": results})
         elif u.path == "/api/test-print":
+            BUSY_PRINTING = True
             try:
                 ok, msg = print_raw(build_test_label())
             except Exception as e:
                 ok, msg = False, str(e)
+            finally:
+                BUSY_PRINTING = False
             self._send(200, {"ok": ok, "msg": msg})
         elif u.path == "/api/config":
             # ajustes vindos da engrenagem; grava no config.json
@@ -965,9 +998,20 @@ class Handler(BaseHTTPRequestHandler):
                     lbl[key] = body[key]
             if body.get("printer_name"):
                 CONFIG["printer_name"] = str(body["printer_name"])
+            if isinstance(body.get("ui"), dict):
+                cur = CONFIG.setdefault("ui", {})
+                for k in ("slots", "theme", "scale"):
+                    if k in body["ui"]:
+                        cur[k] = body["ui"][k]
+                try:
+                    cur["slots"] = max(2, min(24, int(cur.get("slots", 10))))
+                except (TypeError, ValueError):
+                    cur["slots"] = 10
             ok = save_config()
             self._send(200, {"ok": ok, "label": lbl,
                              "printer": CONFIG["printer_name"],
+                             "printer_status": printer_health(),
+                             "ui": CONFIG.get("ui", {}),
                              "language_effective": resolve_language()})
         else:
             self._send(404, {"erro": "rota desconhecida"})

@@ -3,121 +3,281 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Etiqueta - NS</title>
+<title>NS Label</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-<header>
-  <div class="head-row">
-    <h1>Etiqueta&nbsp;-&nbsp;NS</h1>
-    <span id="printer" class="pill">impressora: —</span>
-    <span id="scan" class="pill">—</span>
-    <button id="btn-refresh" class="ghost">Reler agora</button>
-    <button id="btn-gear" class="ghost gear" title="Configurações" aria-label="Configurações">⚙</button>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-printer" viewBox="0 0 24 24"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-check-sq" viewBox="0 0 24 24"><path d="M21 10.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12.5"/><path d="m9 11 3 3L22 4"/></symbol>
+    <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></symbol>
+    <symbol id="i-cycles" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="5" cy="12" r="1.4" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+    <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/></symbol>
+    <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
+    <symbol id="i-ok-circle" viewBox="0 0 24 24"><path d="M21.8 10A10 10 0 1 1 17 3.3"/><path d="m9 11 3 3L22 4"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+    <symbol id="i-hdd" viewBox="0 0 24 24"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/></symbol>
+    <symbol id="i-tablet" viewBox="0 0 24 24"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 18h.01"/></symbol>
+    <symbol id="i-droplet" viewBox="0 0 24 24"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+
+  <header id="appbar">
+    <div class="brand">
+      <span class="logo"><svg class="ic"><use href="#i-tag"/></svg></span>
+      <div class="brand-txt">
+        <span class="brand-name">NS&nbsp;Label</span>
+        <span class="brand-sub" id="sys-status"><i class="pip"></i> Sistema online</span>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <button class="kpi kpi-printer" id="kpi-printer" title="Configurar impressora">
+        <svg class="ic"><use href="#i-printer"/></svg>
+        <span class="kpi-body">
+          <span class="kpi-label">Impressora</span>
+          <span class="kpi-value" id="kpi-printer-name">—</span>
+        </span>
+        <span class="pstat" id="pstat"><i class="pip"></i><span id="pstat-txt">—</span></span>
+      </button>
+      <div class="kpi">
+        <svg class="ic"><use href="#i-grid"/></svg>
+        <span class="kpi-body"><span class="kpi-label">Dispositivos</span><span class="kpi-value num" id="kpi-dev">0 / 10</span></span>
+      </div>
+      <div class="kpi">
+        <svg class="ic"><use href="#i-check-sq"/></svg>
+        <span class="kpi-body"><span class="kpi-label">Selecionados</span><span class="kpi-value num" id="kpi-sel">0</span></span>
+      </div>
+      <div class="kpi">
+        <svg class="ic"><use href="#i-tag"/></svg>
+        <span class="kpi-body"><span class="kpi-label">Impressões</span><span class="kpi-value num" id="kpi-print">0</span></span>
+      </div>
+    </div>
+
+    <div class="appbar-actions">
+      <span class="last-read" id="last-read"><svg class="ic"><use href="#i-clock"/></svg> —</span>
+      <button id="btn-refresh" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Reler</button>
+      <button id="btn-gear" class="btn icon-btn" title="Configurações" aria-label="Configurações"><svg class="ic"><use href="#i-settings"/></svg></button>
+    </div>
+  </header>
+
+  <div id="toolbar">
+    <div class="tb-left">
+      <button id="sel-all" class="btn"><svg class="ic"><use href="#i-check-sq"/></svg> Selecionar todas</button>
+      <button id="sel-none" class="btn"><svg class="ic"><use href="#i-x"/></svg> Limpar</button>
+      <div class="stepper">
+        <span class="stepper-label">Cópias</span>
+        <button data-step="-1" aria-label="menos"><svg class="ic"><use href="#i-minus"/></svg></button>
+        <input id="copies" type="number" value="1" min="1" max="50" inputmode="numeric">
+        <button data-step="1" aria-label="mais"><svg class="ic"><use href="#i-plus"/></svg></button>
+      </div>
+    </div>
+    <div class="tb-right">
+      <button id="print-sel" class="btn btn-2"><svg class="ic"><use href="#i-printer"/></svg> Imprimir selecionadas <span class="count" id="n-sel">0</span></button>
+      <button id="print-all" class="btn btn-primary"><svg class="ic"><use href="#i-printer"/></svg> Imprimir todas <span class="count" id="n-conn">0</span></button>
+    </div>
   </div>
 
-  <div class="action-row">
-    <button id="sel-all" class="ghost">Selecionar todas</button>
-    <button id="sel-none" class="ghost">Limpar seleção</button>
-    <span class="sep"></span>
-    <label>cópias <input type="number" id="copies" value="1" min="1" max="50"></label>
-    <span class="sep"></span>
-    <button id="print-sel" class="primary">Imprimir selecionadas (<span id="n-sel">0</span>)</button>
-    <button id="print-all" class="primary">Imprimir todas conectadas (<span id="n-conn">0</span>)</button>
-    <span id="bulk-msg" class="muted"></span>
-  </div>
-</header>
+  <main id="scroll"><div id="grid"></div></main>
 
-<main id="grid"></main>
+  <footer id="activity" class="collapsed">
+    <button id="act-toggle" class="act-head" aria-expanded="false">
+      <svg class="ic"><use href="#i-zap"/></svg>
+      <span id="act-latest">Pronto para operar</span>
+      <span class="act-count" id="act-count" hidden>0</span>
+      <svg class="ic act-caret"><use href="#i-chevron-up"/></svg>
+    </button>
+    <ul id="act-list" aria-label="Atividade recente"></ul>
+  </footer>
+
+</div>
 
 <template id="slot-tpl">
-  <section class="slot">
+  <article class="slot" tabindex="0">
     <div class="slot-empty">
-      <span class="slot-n">Slot</span>
-      <span class="muted">sem aparelho</span>
+      <svg class="ic slot-empty-ic"><use href="#i-plug"/></svg>
+      <span class="slot-tag">SLOT <b class="slot-n">01</b></span>
+      <span class="empty-msg">Aguardando dispositivo</span>
     </div>
-    <div class="slot-dev">
-      <div class="dev-head">
-        <span class="check" aria-hidden="true"></span>
-        <b class="dev-model">iPad</b>
+
+    <div class="slot-body">
+      <div class="slot-top">
+        <span class="slot-tag">SLOT <b class="slot-n">01</b></span>
+        <span class="status-pill"><i class="sp-dot"></i><span class="sp-text">—</span></span>
       </div>
-      <div class="dev-sub"><span class="dev-cap"></span><span class="dev-color"></span><span class="dev-ios"></span></div>
-      <div class="dev-serial mono">—</div>
-      <div class="dev-metrics">
-        <span>BT <b class="m-bt">—</b></span>
-        <span>CC <b class="m-cc">—</b></span>
-        <span>carga <b class="m-charge">—</b></span>
+
+      <h3 class="dev-model">—</h3>
+      <p class="dev-spec"></p>
+
+      <div class="serial-row">
+        <svg class="ic serial-ic"><use href="#i-tag"/></svg>
+        <span class="dev-serial mono">—</span>
+        <button class="btn-copy icon-btn" title="Copiar nº de série" aria-label="Copiar"><svg class="ic"><use href="#i-copy"/></svg></button>
       </div>
-      <div class="dev-note"></div>
-      <div class="dev-foot">
-        <button class="btn-pair ghost hidden">Parear / Confiar</button>
-        <button class="btn-print ghost">Imprimir esta</button>
-        <button class="btn-cmd ghost">Ver comando</button>
-        <span class="print-msg"></span>
+
+      <div class="batt">
+        <div class="batt-line">
+          <span class="batt-track"><span class="batt-fill"></span></span>
+          <span class="batt-pct num">—</span>
+        </div>
+        <span class="batt-sub"><svg class="ic"><use href="#i-cycles"/></svg><span class="m-cc num">—</span> ciclos</span>
       </div>
+
+      <p class="dev-note"></p>
+
+      <div class="slot-foot">
+        <label class="sel-toggle">
+          <span class="sel-box"><svg class="ic"><use href="#i-check"/></svg></span>
+          <span class="sel-label">Selecionar</span>
+        </label>
+        <div class="foot-btns">
+          <button class="btn-pair btn btn-warn hidden">Confiar</button>
+          <button class="btn-print btn btn-primary"><svg class="ic"><use href="#i-printer"/></svg> Imprimir</button>
+          <button class="btn-more btn icon-btn" aria-label="Mais opções"><svg class="ic"><use href="#i-more"/></svg></button>
+        </div>
+      </div>
+
+      <div class="slot-menu" hidden>
+        <button class="btn-cmd"><svg class="ic"><use href="#i-terminal"/></svg> Ver comando</button>
+        <button class="btn-copy2"><svg class="ic"><use href="#i-copy"/></svg> Copiar nº de série</button>
+      </div>
+
+      <div class="slot-progress"><span></span></div>
     </div>
-  </section>
+  </article>
 </template>
 
 <dialog id="cfg-dlg">
-  <form method="dialog"><button class="x" value="cancel" aria-label="Fechar">×</button></form>
-  <h3>⚙ Configurações</h3>
+  <header class="dlg-head">
+    <h3><svg class="ic"><use href="#i-settings"/></svg> Configurações</h3>
+    <button class="dlg-x icon-btn" id="cf-close" aria-label="Fechar"><svg class="ic"><use href="#i-x"/></svg></button>
+  </header>
 
-  <div class="cfg-grid">
-    <label class="wide">Impressora
-      <span class="row">
-        <select id="cf-printer"></select>
-        <button type="button" id="cf-printer-reload" class="ghost mini" title="Atualizar lista">↻</button>
-      </span>
-    </label>
+  <nav class="cfg-tabs">
+    <button data-tab="printer" class="active">Impressora</button>
+    <button data-tab="devices">Dispositivos</button>
+    <button data-tab="labels">Etiquetas</button>
+    <button data-tab="ui">Interface</button>
+  </nav>
 
-    <label>Linguagem
-      <select id="cf-lang">
-        <option value="auto">Automático</option>
-        <option value="epl">EPL (Elgin, Argox, TSC…)</option>
-        <option value="zpl">ZPL (Zebra…)</option>
-      </select>
-      <small id="cf-lang-eff" class="muted"></small>
-    </label>
+  <div class="cfg-scroll">
+    <section data-panel="printer">
+      <label class="fld">Impressora
+        <span class="fld-row">
+          <select id="cf-printer"></select>
+          <button type="button" id="cf-printer-reload" class="btn icon-btn" title="Atualizar lista"><svg class="ic"><use href="#i-refresh"/></svg></button>
+        </span>
+      </label>
+      <label class="fld">Protocolo
+        <select id="cf-lang">
+          <option value="auto">Automático (detecta pela impressora)</option>
+          <option value="epl">EPL — Elgin, Argox, TSC</option>
+          <option value="zpl">ZPL — Zebra</option>
+        </select>
+        <small id="cf-lang-eff" class="hint"></small>
+      </label>
+      <div class="fld-group">
+        <span class="fld-group-t">Ajuste da impressão</span>
+        <label class="fld">Escurecimento
+          <span class="fld-row"><input type="number" id="cf-dark" min="0" max="15" step="1"><small class="hint">0–15 · abaixe se sair grosso</small></span>
+        </label>
+        <label class="chk"><input type="checkbox" id="cf-flip"> Girar etiqueta 180°</label>
+        <label class="chk"><input type="checkbox" id="cf-bold"> Letras em negrito</label>
+      </div>
+    </section>
 
-    <label>Tamanho geral
-      <span class="row"><input type="number" id="cf-scale" min="40" max="150" step="5"> %</span>
-    </label>
+    <section data-panel="devices" hidden>
+      <label class="fld">Quantidade de slots
+        <span class="fld-row"><input type="number" id="cf-slots" min="2" max="24" step="1"><small class="hint">2 a 24</small></span>
+      </label>
+      <label class="chk"><input type="checkbox" id="cf-auto"> Atualização automática da tela</label>
+      <label class="fld">Intervalo de atualização
+        <span class="fld-row"><input type="number" id="cf-interval" min="1" max="15" step="1"> <small class="hint">segundos</small></span>
+      </label>
+    </section>
 
-    <label>Deslocar ← →
-      <input type="number" id="cf-ox" step="4"> <small class="muted">pontos (8 = 1 mm)</small>
-    </label>
-    <label>Deslocar ↑ ↓
-      <input type="number" id="cf-oy" step="4"> <small class="muted">pontos</small>
-    </label>
+    <section data-panel="labels" hidden>
+      <div class="fld-group">
+        <span class="fld-group-t">Campos exibidos na etiqueta</span>
+        <label class="chk"><input type="checkbox" id="cf-color"> Cor do aparelho</label>
+        <label class="chk"><input type="checkbox" id="cf-labels"> Rótulos “BT” / “CC”</label>
+      </div>
+      <label class="fld">Tamanho geral
+        <span class="fld-row"><input type="number" id="cf-scale" min="40" max="150" step="5"> %</span>
+      </label>
+      <div class="fld-cols">
+        <label class="fld">Deslocar ← →<input type="number" id="cf-ox" step="4"></label>
+        <label class="fld">Deslocar ↑ ↓<input type="number" id="cf-oy" step="4"></label>
+      </div>
+      <label class="fld">Cópias padrão
+        <input type="number" id="cf-copies" min="1" max="50" step="1">
+      </label>
+    </section>
 
-    <label>Escurecimento
-      <input type="number" id="cf-dark" min="0" max="15" step="1">
-      <small class="muted">0–15. Baixe se sair grosso/borrado.</small>
-    </label>
-
-    <label class="chk"><input type="checkbox" id="cf-flip"> Girar etiqueta 180°</label>
-    <label class="chk"><input type="checkbox" id="cf-bold"> Letras em negrito</label>
-    <label class="chk"><input type="checkbox" id="cf-labels"> Mostrar "BT" / "CC"</label>
-    <label class="chk"><input type="checkbox" id="cf-color"> Mostrar a cor do aparelho</label>
+    <section data-panel="ui" hidden>
+      <div class="fld-group">
+        <span class="fld-group-t">Tema</span>
+        <div class="seg" id="cf-theme">
+          <button data-v="light">Claro</button>
+          <button data-v="dark">Escuro</button>
+          <button data-v="system">Sistema</button>
+        </div>
+      </div>
+      <div class="fld-group">
+        <span class="fld-group-t">Tamanho da interface</span>
+        <div class="seg" id="cf-uiscale">
+          <button data-v="90">90%</button>
+          <button data-v="100">100%</button>
+          <button data-v="110">110%</button>
+          <button data-v="125">125%</button>
+        </div>
+      </div>
+    </section>
   </div>
 
-  <div class="dlg-actions">
-    <button type="button" id="cf-test" class="ghost">Imprimir etiqueta de teste</button>
-    <span id="cf-msg" class="muted"></span>
-    <span style="flex:1"></span>
-    <button type="button" id="cf-save" class="primary">Salvar</button>
-  </div>
+  <footer class="dlg-foot">
+    <button type="button" id="cf-test" class="btn"><svg class="ic"><use href="#i-play"/></svg> Testar impressão</button>
+    <span id="cf-msg" class="hint"></span>
+    <span class="spacer"></span>
+    <button type="button" id="cf-save" class="btn btn-primary">Salvar</button>
+  </footer>
 </dialog>
 
 <dialog id="cmd-dlg">
-  <h3>Comando enviado à impressora</h3>
+  <header class="dlg-head">
+    <h3><svg class="ic"><use href="#i-terminal"/></svg> Comando enviado à impressora</h3>
+    <button class="dlg-x icon-btn" id="cmd-close" aria-label="Fechar"><svg class="ic"><use href="#i-x"/></svg></button>
+  </header>
   <pre id="cmd-text"></pre>
-  <div class="dlg-actions">
-    <button id="cmd-copy" class="ghost">Copiar</button>
-    <button id="cmd-close" class="primary">Fechar</button>
-  </div>
+  <footer class="dlg-foot">
+    <span class="spacer"></span>
+    <button id="cmd-copy" class="btn"><svg class="ic"><use href="#i-copy"/></svg> Copiar</button>
+  </footer>
 </dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script src="/static/app.js"></script>
 </body>

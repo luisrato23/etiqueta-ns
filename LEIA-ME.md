@@ -22,31 +22,39 @@ Tudo centralizado, em pilha. Imprime direto na **ELGIN L42PRO FULL**
   nome por USB, só um número. Se algum aparelho mostrar a cor errada, use
   **Ver comando** para achar o código e corrija em `config.json` → `color_names`.
 
-A interface é uma grade de **10 caixas** (tema claro). Sem prévia da etiqueta —
-o que sai na impressora é o desenho acima.
+## Interface ("NS Label")
 
-**Cor da caixa:** 🔴 vermelha = lendo o aparelho · 🟢 verde = leitura concluída ·
-🟠 laranja = precisa tocar em "Confiar" no aparelho. **Reler agora** deixa tudo
-vermelho de novo enquanto relê.
+Console profissional com tema **claro / escuro / sistema** (na engrenagem →
+Interface). Sem prévia da etiqueta — o que sai na impressora é o desenho acima.
+
+- **Topo:** logo + status do sistema · indicadores (Impressora + status,
+  Dispositivos X/N, Selecionados, Impressões) · última leitura · Reler · ⚙
+- **Impressora:** 🟢 Conectada · 🟡 Ocupada · 🔴 Desconectada (clique abre os
+  ajustes de impressora).
+- **Grade de slots** (quantidade ajustável em ⚙ → Dispositivos): cada card mostra
+  o estado — **Lendo** (esqueleto animado) · **Pronta** · **Confiar** ·
+  **Imprimindo** · **Enviada ✓** · **Erro**. Slot vazio fica discreto.
+- **Bateria:** barra + % com cor (🟢 90–100 · 🟡 80–89 · 🟠 70–79 · 🔴 <70) e
+  os ciclos como informação secundária.
+- **Painel de atividade** (rodapé): últimas ações — "Slot 01 · etiqueta enviada ✓".
 
 ## Como usar (dia a dia)
 
 O servidor **liga sozinho quando o Windows inicia** (em segundo plano, sem
 janela). O link é sempre o mesmo:
 
-> **http://localhost:8765**  — atalho **"Etiquetas de iPad"** na área de trabalho.
+> **http://localhost:8765**  — atalho **"Etiqueta - NS"** na área de trabalho.
 
 Fixe essa aba no navegador (botão direito na aba → *Fixar*) e ela fica lá.
 
 1. Ligue os iPads no cabo USB — dá para vários ao mesmo tempo com um hub.
-   A tela tem **10 caixas**; cada aparelho conectado ocupa uma.
 2. Na 1ª vez o iPad pede **"Confiar neste computador"** — desbloqueie e toque
-   em **Confiar** (se a caixa pedir, clique em **Parear / Confiar**).
+   em **Confiar** (se o card pedir, clique em **Confiar**).
 3. Imprimir:
-   - **uma etiqueta**: botão **Imprimir esta** dentro da caixa;
-   - **algumas**: clique nas caixas que quer (ficam marcadas) e
-     **Imprimir selecionadas (N)**;
-   - **todas de uma vez**: **Imprimir todas conectadas (N)**.
+   - **uma etiqueta**: botão **Imprimir** dentro do card;
+   - **algumas**: clique nos cards que quer (ficam marcados) e
+     **Imprimir selecionadas**;
+   - **todas de uma vez**: **Imprimir todas conectadas**.
    O campo **cópias** vale para todas as etiquetas do lote.
 
 ### Ligar / desligar / manual
@@ -56,7 +64,7 @@ Fixe essa aba no navegador (botão direito na aba → *Fixar*) e ela fica lá.
 | Está sempre ligado? | Abra http://localhost:8765 — se abrir, está no ar. |
 | Parar o servidor | dois cliques em `PARAR.bat` |
 | Ligar de novo na hora | dois cliques em `INICIAR.bat` (abre com janela e log visível) ou `iniciar_oculto.vbs` (sem janela) |
-| Tirar da inicialização | apague `Etiquetas de iPad.vbs` da pasta *Inicializar* do Windows (tecle Win+R, `shell:startup`) |
+| Tirar da inicialização | apague `Etiqueta - NS.vbs` da pasta *Inicializar* do Windows (tecle Win+R, `shell:startup`) |
 | Ver o que aconteceu | arquivo `server.log` na pasta do projeto |
 
 O driver USB da Apple (*Apple Mobile Device Support*) já está instalado nesta
