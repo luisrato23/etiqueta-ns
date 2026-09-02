@@ -39,6 +39,8 @@
     <symbol id="i-tablet" viewBox="0 0 24 24"><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M12 18h.01"/></symbol>
     <symbol id="i-droplet" viewBox="0 0 24 24"><path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/></symbol>
     <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
   </defs>
 </svg>
 
@@ -77,6 +79,10 @@
     </div>
 
     <div class="appbar-actions">
+      <button id="btn-update" class="btn upd hidden">
+        <svg class="ic"><use href="#i-spark"/></svg>
+        <span id="upd-txt">Atualização disponível</span>
+      </button>
       <span class="last-read" id="last-read"><svg class="ic"><use href="#i-clock"/></svg> —</span>
       <button id="btn-refresh" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Reler</button>
       <button id="btn-gear" class="btn icon-btn" title="Configurações" aria-label="Configurações"><svg class="ic"><use href="#i-settings"/></svg></button>
@@ -261,6 +267,13 @@
           <button data-v="125">125%</button>
         </div>
       </div>
+      <div class="fld-group">
+        <span class="fld-group-t">Atualização</span>
+        <div class="fld-row" style="justify-content:space-between">
+          <span class="hint" id="cf-ver">Versão —</span>
+          <button type="button" id="cf-check" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Buscar atualização</button>
+        </div>
+      </div>
     </section>
   </div>
 
@@ -283,6 +296,32 @@
     <button id="cmd-copy" class="btn"><svg class="ic"><use href="#i-copy"/></svg> Copiar</button>
   </footer>
 </dialog>
+
+<dialog id="upd-dlg">
+  <header class="dlg-head">
+    <h3><svg class="ic"><use href="#i-spark"/></svg> Atualização disponível</h3>
+    <button class="dlg-x icon-btn" id="upd-close" aria-label="Fechar"><svg class="ic"><use href="#i-x"/></svg></button>
+  </header>
+  <div class="upd-body">
+    <p class="upd-ver">Versão <b id="upd-from">—</b> → <b id="upd-to" class="upd-new">—</b></p>
+    <pre id="upd-notes"></pre>
+    <p class="hint">O sistema baixa a versão nova, reinicia sozinho (~15&nbsp;s) e
+    recarrega esta página. <b>Suas configurações são mantidas.</b></p>
+  </div>
+  <footer class="dlg-foot">
+    <span class="spacer"></span>
+    <button id="upd-later" class="btn">Agora não</button>
+    <button id="upd-go" class="btn btn-primary"><svg class="ic"><use href="#i-download"/></svg> Atualizar agora</button>
+  </footer>
+</dialog>
+
+<div id="updating" class="hidden">
+  <div class="updating-card">
+    <svg class="ic spin"><use href="#i-loader"/></svg>
+    <h3 id="updating-txt">Atualizando…</h3>
+    <p class="hint">Não feche esta janela. A página recarrega automaticamente.</p>
+  </div>
+</div>
 
 <div id="toast" role="status" aria-live="polite"></div>
 

@@ -559,8 +559,89 @@ document.querySelectorAll("#cf-uiscale button").forEach((b) => (b.onclick = () =
   uiScaleVal = Number(b.dataset.v); LS.set("uiscale", uiScaleVal); applyUiScale(uiScaleVal); segSet("cf-uiscale", uiScaleVal);
 }));
 
+/* ====================== atualização ====================== */
+let verInfo = null;
+
+async function checkVersion(force) {
+  try {
+    verInfo = await api("/api/version" + (force ? "?force=1" : ""));
+  } catch { return null; }
+  const cur = verInfo.current || "—";
+  $("cf-ver").textContent = verInfo.update_available
+    ? `Versão ${cur} · nova: ${verInfo.latest}`
+    : `Versão ${cur} · atualizado` + (verInfo.checked ? "" : " (sem internet?)");
+
+  const btn = $("btn-update");
+  if (verInfo.update_available) {
+    btn.classList.remove("hidden");
+    $("upd-txt").textContent = `Atualizar · ${verInfo.latest}`;
+    const seen = sessionStorage.getItem("nslabel.updSeen");
+    if (seen !== verInfo.latest) {
+      sessionStorage.setItem("nslabel.updSeen", verInfo.latest);
+      toast(`Nova versão ${verInfo.latest} disponível`, "info", 6000);
+      logAct(`Atualização ${verInfo.latest} disponível`, "info");
+    }
+  } else {
+    btn.classList.add("hidden");
+  }
+  return verInfo;
+}
+
+const updDlg = $("upd-dlg");
+$("btn-update").onclick = () => {
+  if (!verInfo) return;
+  $("upd-from").textContent = verInfo.current;
+  $("upd-to").textContent = verInfo.latest;
+  $("upd-notes").textContent = verInfo.notes || "";
+  updDlg.showModal();
+};
+$("upd-close").onclick = () => updDlg.close();
+$("upd-later").onclick = () => updDlg.close();
+$("cf-check").onclick = async () => {
+  $("cf-ver").textContent = "verificando…";
+  const v = await checkVersion(true);
+  toast(v && v.update_available ? `Nova versão ${v.latest} disponível`
+    : "Você já está na versão mais recente", v && v.update_available ? "info" : "ok");
+};
+
+$("upd-go").onclick = async () => {
+  updDlg.close();
+  $("updating").classList.remove("hidden");
+  $("updating-txt").textContent = "Baixando atualização…";
+  stopPolling();
+  let r;
+  try {
+    r = await api("/api/update", { method: "POST" });
+  } catch { r = { ok: false, msg: "sem resposta" }; }
+  if (!r.ok) {
+    $("updating-txt").textContent = "Falha: " + (r.msg || "erro");
+    setTimeout(() => { $("updating").classList.add("hidden"); startPolling(); }, 4000);
+    return;
+  }
+  $("updating-txt").textContent = "Instalando e reiniciando…";
+  waitForRestart(verInfo ? verInfo.current : null);
+};
+
+async function waitForRestart(oldVer) {
+  const started = Date.now();
+  const tick = async () => {
+    if (Date.now() - started > 120000) {
+      $("updating-txt").textContent = "Demorou mais que o esperado — recarregue com F5.";
+      return;
+    }
+    try {
+      const v = await api("/api/version");
+      if (v && v.current && v.current !== oldVer) { location.reload(); return; }
+    } catch { /* servidor reiniciando */ }
+    setTimeout(tick, 2500);
+  };
+  setTimeout(tick, 5000);
+}
+
 /* ====================== start ====================== */
 ensureSlots(SLOTS);
 renderActivity();
 poll();
 startPolling();
+checkVersion();
+setInterval(() => checkVersion(), 30 * 60 * 1000);

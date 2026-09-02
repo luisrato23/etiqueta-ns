@@ -13,14 +13,20 @@ Sem dependencias externas: usa apenas a biblioteca padrao do Python.
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import unicodedata
 import plistlib
+import urllib.request
+import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
+
+VERSION = "1.2.0"
+GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
@@ -192,6 +198,81 @@ def ensure_printer_configured():
             CONFIG["printer_name"] = pick
             save_config()
             print(f"[impressoras] usando '{pick}'")
+
+
+# ------------------------------- atualizacao -------------------------------
+
+def _ver_tuple(s):
+    return tuple(int(x) for x in re.findall(r"\d+", str(s or "0")))
+
+
+_UPDATE_CACHE = {"ts": 0.0, "data": None}
+
+
+def check_update(force=False):
+    """Consulta o GitHub pela ultima release. Cacheia 1h. So leitura."""
+    now = time.time()
+    if not force and _UPDATE_CACHE["data"] and now - _UPDATE_CACHE["ts"] < 3600:
+        return _UPDATE_CACHE["data"]
+    repo = CONFIG.get("update_repo", GITHUB_REPO)
+    result = {"current": VERSION, "latest": VERSION, "tag": f"v{VERSION}",
+              "update_available": False, "notes": "", "checked": False}
+    try:
+        req = urllib.request.Request(
+            f"https://api.github.com/repos/{repo}/releases/latest",
+            headers={"Accept": "application/vnd.github+json",
+                     "User-Agent": "NS-Label/" + VERSION})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            rel = json.loads(r.read().decode("utf-8"))
+        tag = str(rel.get("tag_name") or "").strip()
+        latest = tag.lstrip("vV")
+        result.update(
+            latest=latest or VERSION, tag=tag or f"v{VERSION}",
+            notes=(rel.get("body") or "").strip()[:1200],
+            update_available=_ver_tuple(latest) > _ver_tuple(VERSION),
+            checked=True)
+    except Exception as e:
+        result["error"] = str(e)[:180]
+    _UPDATE_CACHE["ts"] = now
+    _UPDATE_CACHE["data"] = result
+    return result
+
+
+_UPDATING = False
+
+
+def apply_update():
+    """Baixa o zip da ultima release, extrai e dispara o apply_update.bat."""
+    global _UPDATING
+    if _UPDATING:
+        return False, "atualizacao ja em andamento"
+    repo = CONFIG.get("update_repo", GITHUB_REPO)
+    url = f"https://github.com/{repo}/releases/latest/download/Etiqueta-NS.zip"
+    zpath = os.path.join(BASE_DIR, "_update.zip")
+    updir = os.path.join(BASE_DIR, "_update")
+    bat = os.path.join(BASE_DIR, "apply_update.bat")
+    try:
+        _UPDATING = True
+        req = urllib.request.Request(url, headers={"User-Agent": "NS-Label/" + VERSION})
+        with urllib.request.urlopen(req, timeout=60) as r, open(zpath, "wb") as f:
+            shutil.copyfileobj(r, f)
+        if os.path.isdir(updir):
+            shutil.rmtree(updir, ignore_errors=True)
+        with zipfile.ZipFile(zpath) as z:
+            z.extractall(updir)
+        root = os.path.join(updir, "Etiqueta-NS")
+        if not os.path.isfile(os.path.join(root, "server.py")):
+            raise RuntimeError("pacote invalido (server.py nao encontrado)")
+        if not os.path.isfile(bat):
+            raise RuntimeError("apply_update.bat nao encontrado na pasta")
+        subprocess.Popen(
+            ["cmd", "/c", bat], cwd=BASE_DIR,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+        return True, "baixado"
+    except Exception as e:
+        _UPDATING = False
+        return False, str(e)[:200]
 
 
 # ProductType -> nome comercial (sem acento; cai no proprio ProductType se faltar)
@@ -902,6 +983,9 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"printers": names,
                              "current": CONFIG.get("printer_name", ""),
                              "language_effective": resolve_language()})
+        elif u.path == "/api/version":
+            force = (q.get("force") or [""])[0] in ("1", "true")
+            self._send(200, check_update(force=force))
         elif u.path in ("/api/label", "/api/zpl"):
             udid = (q.get("udid") or [""])[0]
             copies = int((q.get("copies") or ["1"])[0])
@@ -977,6 +1061,9 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 BUSY_PRINTING = False
             self._send(200, {"results": results})
+        elif u.path == "/api/update":
+            ok, msg = apply_update()
+            self._send(200, {"ok": ok, "msg": msg})
         elif u.path == "/api/test-print":
             BUSY_PRINTING = True
             try:

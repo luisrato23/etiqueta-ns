@@ -129,6 +129,29 @@ button.kpi:hover{border-color:var(--text-3)}
 .last-read{font-size:.76rem;color:var(--text-2);display:flex;align-items:center;gap:5px}
 .last-read .ic{font-size:.95rem;color:var(--text-3)}
 
+/* botao de atualizacao */
+.btn.upd{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600;
+  box-shadow:0 0 0 0 var(--primary-ring);animation:upd-glow 2.4s ease-in-out infinite}
+.btn.upd:hover{background:var(--primary-h);border-color:var(--primary-h)}
+@keyframes upd-glow{0%,100%{box-shadow:0 0 0 0 var(--primary-ring)}50%{box-shadow:0 0 0 5px transparent}}
+
+.upd-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.upd-ver{margin:0;font-size:.95rem}
+.upd-new{color:var(--primary)}
+#upd-notes{margin:0;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:11px 13px;font-family:ui-monospace,"SF Mono",monospace;font-size:.76rem;line-height:1.5;
+  white-space:pre-wrap;word-break:break-word;max-height:34vh;overflow:auto;color:var(--text-2)}
+#upd-notes:empty{display:none}
+
+#updating{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(3px)}
+.updating-card{background:var(--surface);border:1px solid var(--border-2);border-radius:16px;
+  box-shadow:var(--shadow);padding:34px 40px;text-align:center;display:flex;flex-direction:column;
+  align-items:center;gap:10px;max-width:360px}
+.updating-card .ic{font-size:2rem;color:var(--primary)}
+.updating-card h3{margin:0;font-size:1.05rem}
+.spin{animation:spin 1s linear infinite}
+
 /* ---------- toolbar ---------- */
 #toolbar{
   display:flex;align-items:center;gap:12px;flex-wrap:wrap;
