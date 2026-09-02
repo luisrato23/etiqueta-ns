@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.13.1"
+VERSION = "1.14.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,6 +37,7 @@ DEFAULT_CONFIG = {
     "http_port": 8765,
     "bind_host": "127.0.0.1",
     "poll_interval_seconds": 3,
+    "battery_poll_seconds": 10,
     "label": {
         "language": "auto",
         "dpmm": 8,
@@ -64,6 +65,7 @@ DEFAULT_CONFIG = {
     },
     "diagnostics_commands": [
         ["ioregentry", "AppleSmartBattery"],
+        ["ioregentry", "AppleSmartBatteryManager"],
         ["diagnostics", "GasGauge"],
         ["ioregentry", "AppleARMPMUCharger"],
     ],
@@ -548,6 +550,9 @@ def get_device_info(udid):
         "ios": None,
         "battery_health": None,      # % de saude (capacidade maxima)
         "cycle_count": None,
+        "batt_updated": 0,           # ultima releitura da bateria (epoch)
+        "batt_samples": 0,           # nº de amostras acumuladas p/ convergir
+        "batt_settled": False,       # True quando o valor ja estabilizou
         "paired": True,
         "status": "ok",
         "notes": [],
@@ -591,6 +596,7 @@ def get_device_info(udid):
 
     # saude + ciclos via interface de diagnostico
     _fill_battery_diagnostics(udid, rec)
+    rec["batt_updated"] = time.time()
 
     if rec["battery_health"] is None and rec["cycle_count"] is None:
         rec["notes"].append(
@@ -627,12 +633,16 @@ def _batt_cache_save():
         pass
 
 
+_DIAG_LOCK = threading.Lock()   # serializa chamadas idevicediagnostics (evita corrida USB)
+
+
 def _diag(udid, sub_args, tries=3, timeout=20):
     """Roda idevicediagnostics repetindo (a interface falha de vez em quando)."""
     last = ""
     for _ in range(tries):
-        rc, out, err = run_tool("idevicediagnostics", ["-u", udid] + list(sub_args),
-                                timeout=timeout)
+        with _DIAG_LOCK:
+            rc, out, err = run_tool("idevicediagnostics", ["-u", udid] + list(sub_args),
+                                    timeout=timeout)
         if rc == 0 and out.strip():
             p = parse_plist_or_regex(out)
             if p:
@@ -642,29 +652,56 @@ def _diag(udid, sub_args, tries=3, timeout=20):
     return {}, last or "sem resposta"
 
 
-def _fill_battery_diagnostics(udid, rec):
+_CAP_HINT_KEYS = ("NominalChargeCapacity", "AppleRawMaxCapacity",
+                  "FullChargeCapacity", "DesignCapacity", "AppleRawDesignCapacity")
+
+
+def _fill_battery_diagnostics(udid, rec, light=False):
+    """Preenche saude/ciclos. light=True: releitura rapida so da fonte que ja
+       funcionou, p/ o valor ir convergindo ao exato a cada poucos segundos."""
+    serial = rec.get("serial") or ""
+    st = _batt_cache().get(serial, {})
+    samples_done = int(st.get("samples", 0))
+
+    all_combos = [list(c) for c in CONFIG.get("diagnostics_commands", [])]
+    if light:
+        src = [c.split(" ") for c in st.get("src", []) if c]
+        combos = src or all_combos
+    else:
+        combos = all_combos
+
     merged = {}
     rawmax_samples = []
-    # so amostra varias vezes na 1a leitura desse aparelho (depois o minimo ja esta salvo)
-    first_read = (rec.get("serial") or "") not in _batt_cache()
+    good_src = set()
+    # re-amostra a fonte da capacidade algumas vezes enquanto o valor nao estabilizou
+    resample = 3 if (samples_done < 6) else 1
 
-    for combo in CONFIG.get("diagnostics_commands", []):
-        # coleta amostras do AppleARMPMUCharger p/ estabilizar AppleRawMaxCapacity
-        n = 3 if (first_read and combo == ["ioregentry", "AppleARMPMUCharger"]) else 1
+    for combo in combos:
+        is_cap_src = combo[-1] in ("AppleARMPMUCharger", "AppleSmartBattery",
+                                   "AppleSmartBatteryManager", "GasGauge")
+        n = resample if is_cap_src else 1
         for i in range(n):
-            parsed, e = _diag(udid, combo, tries=(3 if i == 0 else 1))
+            parsed, e = _diag(udid, combo, tries=(3 if (i == 0 and not light) else 1),
+                              timeout=(9 if light else 20))
             if i == 0:
                 rec["raw_diag"][" ".join(combo)] = parsed if parsed else {"_erro": e}
             for k, v in parsed.items():
                 merged.setdefault(k, v)
+            if any(k in parsed for k in _CAP_HINT_KEYS):
+                good_src.add(" ".join(combo))
             rm = parsed.get("AppleRawMaxCapacity")
             if isinstance(rm, (int, float)) and rm > 0:
                 rawmax_samples.append(float(rm))
+            if not parsed:
+                break                      # fonte nao respondeu -> nao insiste
             if n > 1 and i < n - 1:
-                time.sleep(0.3)
+                time.sleep(0.25)
 
     if isinstance(merged.get("BatteryHealthMetadata"), dict):
         for k, v in merged["BatteryHealthMetadata"].items():
+            merged.setdefault(k, v)
+    if isinstance(merged.get("BatteryData"), dict):
+        for k, v in merged["BatteryData"].items():
             merged.setdefault(k, v)
 
     # ciclos
@@ -681,45 +718,78 @@ def _fill_battery_diagnostics(udid, rec):
     rawmax = min(rawmax_samples) if rawmax_samples else _first_number(
         merged, ["AppleRawMaxCapacity", "FullChargeCapacity"])
 
-    h = _health_pct(rec.get("serial"), design, nominal, rawmax)
+    if serial and good_src:
+        cur = set(st.get("src", []))
+        st["src"] = sorted(cur | good_src)
+        _batt_cache()[serial] = st
+        _batt_cache_save()
+
+    h, settled, nsamp = _health_pct(serial, design, nominal, rawmax)
     if h:
         rec["battery_health"] = h
-    elif rec["battery_health"] is None:
+    elif rec.get("battery_health") is None:
         for key in ("MaximumCapacityPercent", "BatteryHealthPercent", "StateOfHealth"):
             v = _first_number(merged, [key])
             if v and 1 <= round(v) <= 100:
                 rec["battery_health"] = round(v)
                 break
+    rec["batt_samples"] = nsamp
+    rec["batt_settled"] = settled
 
 
 def _health_pct(serial, design, nominal, rawmax):
-    """Saude estavel, acompanhando Apple/3uTools:
-       usa NominalChargeCapacity quando existe; senao o MENOR AppleRawMaxCapacity
-       ja visto pra esse aparelho (bateria so perde capacidade)."""
-    if not design or design <= 0:
-        return None
+    """Saude acompanhando Apple/3uTools. Usa NominalChargeCapacity quando a
+       interface entrega; senao o MENOR AppleRawMaxCapacity ja visto pra esse
+       aparelho — esse valor oscila (picos pra cima), entao a cada releitura
+       o minimo cai/estabiliza e converge pro numero exato (bateria so degrada).
+       Retorna (pct, estabilizou, n_amostras)."""
     cache = _batt_cache()
     s = cache.get(serial or "", {})
-    s["design"] = design
+    if design and design > 0:
+        s["design"] = design
+    design = s.get("design") or design
+    if not design or design <= 0:
+        return None, False, int(s.get("samples", 0))
 
+    got = False
     if nominal and nominal > 0:
         prev = s.get("nominal")
         s["nominal"] = nominal if not prev else min(prev, nominal)
+        got = True
     if rawmax and rawmax > 0:
         prev = s.get("rawmax_min")
-        if prev and rawmax > prev * 1.07:      # subiu muito -> bateria trocada/recalibrada
-            prev = None
-        s["rawmax_min"] = rawmax if not prev else min(prev, rawmax)
+        if prev:
+            if rawmax > prev * 1.15:          # salto grande -> bateria trocada
+                prev = None
+            elif rawmax < prev * 0.93 and s.get("samples", 0) >= 4:
+                rawmax = None                 # leitura absurda -> descarta (glitch)
+        if rawmax:
+            s["rawmax_min"] = rawmax if not prev else min(prev, rawmax)
+            got = True
+
+    if got:
+        s["samples"] = int(s.get("samples", 0)) + 1
+
+    cap = s.get("nominal") or s.get("rawmax_min")
+    pct = None
+    if cap:
+        p = round(100.0 * cap / design)
+        if 1 <= p <= 100:
+            pct = p
+
+    # estabilizou = mesmo valor por varias releituras seguidas
+    if pct == s.get("last_h"):
+        s["stable"] = int(s.get("stable", 0)) + (1 if got else 0)
+    else:
+        s["stable"] = 0
+    s["last_h"] = pct
+    settled = bool(s.get("nominal")) or (
+        s.get("stable", 0) >= 6 and s.get("samples", 0) >= 10)
 
     if serial:
         cache[serial] = s
         _batt_cache_save()
-
-    cap = s.get("nominal") or s.get("rawmax_min")
-    if not cap:
-        return None
-    pct = round(100.0 * cap / design)
-    return pct if 1 <= pct <= 100 else None
+    return pct, settled, int(s.get("samples", 0))
 
 
 def _first_number(d, keys):
@@ -1049,6 +1119,47 @@ def poller():
             print(f"[poller] {e}")
         time.sleep(max(1, int(CONFIG.get("poll_interval_seconds", 3))))
 
+
+def battery_poller():
+    """Releitura continua so da bateria (saude/ciclos) enquanto o aparelho
+       esta conectado. A cada poucos segundos re-amostra a capacidade e o
+       valor converge pro exato — sem margem de 1% pra mais/menos. Nao mexe
+       no status do card nem dispara som/log de leitura."""
+    while True:
+        wait = 3
+        try:
+            every = max(4, int(CONFIG.get("battery_poll_seconds", 10)))
+            now = time.time()
+            with LOCK:
+                # depois de estabilizar, espaça as releituras (ainda acompanha desvios)
+                targets = [u for u, r in DEVICES.items()
+                           if r.get("status") == "ok" and r.get("serial")
+                           and now - r.get("batt_updated", 0) >= (
+                               max(every, 45) if r.get("batt_settled") else every)]
+            for u in targets:
+                with LOCK:
+                    base = dict(DEVICES.get(u, {}))
+                if not base.get("serial"):
+                    continue
+                base["raw_diag"] = {}
+                try:
+                    _fill_battery_diagnostics(u, base, light=True)
+                except Exception as e:
+                    print(f"[batt] {u[:8]} {e}")
+                    continue
+                with LOCK:
+                    d = DEVICES.get(u)
+                    if d and d.get("serial") == base.get("serial"):
+                        d["battery_health"] = base.get("battery_health")
+                        d["cycle_count"] = base.get("cycle_count")
+                        d["batt_samples"] = base.get("batt_samples", 0)
+                        d["batt_settled"] = base.get("batt_settled", False)
+                        d["raw_diag"] = base.get("raw_diag") or d.get("raw_diag", {})
+                        d["batt_updated"] = time.time()
+        except Exception as e:
+            print(f"[batt] {e}")
+        time.sleep(wait)
+
 # ---------------------------------------------------------------------------
 # HTTP
 # ---------------------------------------------------------------------------
@@ -1164,15 +1275,6 @@ class Handler(BaseHTTPRequestHandler):
             action = body.get("action", "shutdown")
             ok, msg = power_device(body.get("udid", ""), action)
             self._send(200, {"ok": ok, "msg": msg})
-        elif u.path == "/api/power-all":
-            action = body.get("action", "shutdown")
-            with LOCK:
-                udids = [k for k in sorted(DEVICES) if DEVICES[k].get("serial")]
-            results = []
-            for x in udids:
-                ok, msg = power_device(x, action)
-                results.append({"udid": x, "ok": ok, "msg": msg})
-            self._send(200, {"results": results})
         elif u.path == "/api/print":
             udid = body.get("udid", "")
             copies = body.get("copies", CONFIG["label"].get("copies_default", 1))
@@ -1295,6 +1397,7 @@ def main():
     except Exception as e:
         print(f"[impressoras] {e}")
     threading.Thread(target=poller, daemon=True).start()
+    threading.Thread(target=battery_poller, daemon=True).start()
     print("=" * 58)
     print("  Etiqueta - NS  -  http://localhost:%d" % port)
     print("  Impressora: %s  (%s)" % (CONFIG["printer_name"], resolve_language()))

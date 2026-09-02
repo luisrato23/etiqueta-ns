@@ -77,9 +77,6 @@ body{
 .btn-2{border-color:var(--primary);color:var(--primary);background:var(--surface)}
 .btn-2:hover{background:var(--primary-weak)}
 .btn-warn{background:var(--warn-bg);border-color:var(--warn);color:var(--warn);font-weight:600}
-.btn-danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border-2))}
-.btn-danger:hover{background:var(--danger-bg);border-color:var(--danger)}
-.btn-danger:disabled{opacity:.55}
 .icon-btn{padding:7px;justify-content:center}
 .icon-btn .ic{font-size:1.05rem}
 .count{background:rgba(0,0,0,.16);color:inherit;border-radius:999px;
@@ -260,6 +257,9 @@ button.kpi:hover{border-color:var(--text-3)}
 .ic-batt .bt-nub{fill:var(--border-2)}
 .ic-batt .bt-lvl{fill:var(--text-3);transition:width .5s ease}
 .batt-pct{font-size:.92rem;font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums}
+.batt-live{flex:0 0 auto;display:inline-flex;color:var(--text-3)}
+.batt-live .ic{width:12px;height:12px;animation:spin 2.2s linear infinite}
+@media (prefers-reduced-motion:reduce){.batt-live .ic{animation:none}}
 .batt-sub{font-size:.72rem;color:var(--text-3);display:flex;align-items:center;gap:4px;margin-left:auto}
 .batt-sub .ic{font-size:.85rem}
 .batt.b-good .bt-lvl{fill:var(--b-good)} .batt.b-good .batt-pct{color:var(--b-good)}

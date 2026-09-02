@@ -11,6 +11,7 @@ const jobState = new Map();          // udid -> "printing" | "sent" | "fail"
 const jobTimers = new Map();
 let devById = new Map();
 let prevStatus = new Map();          // udid -> status anterior (transições)
+let prevHealth = new Map();          // udid -> saúde % anterior (ajuste ao vivo)
 let slotOfUdid = new Map();          // udid -> nº do slot (para logs de desconexão)
 let seenUdids = new Set();
 
@@ -210,6 +211,12 @@ function fillSlot(node, dev, slotNo) {
   q(".bt-lvl").setAttribute("width", lvl.toFixed(1));
   q(".batt-pct").textContent = reading ? "··"
     : (h === null || h === undefined ? "N/D" : h + "%");
+  const known = !reading && h !== null && h !== undefined;
+  q(".batt-live").hidden = !(known && dev.batt_settled === false);
+  q(".batt-pct").title = known && dev.batt_samples
+    ? (dev.batt_settled ? `saúde confirmada · ${dev.batt_samples} leituras`
+      : `medindo a saúde exata · ${dev.batt_samples} leituras`)
+    : "";
   q(".m-cc").textContent = reading ? "—"
     : (dev.cycle_count === null || dev.cycle_count === undefined ? "N/D" : dev.cycle_count);
 
@@ -262,7 +269,6 @@ function syncSelection() {
   $("kpi-print").textContent = printCount;
   $("print-sel").disabled = selected.size === 0 || busyU.size > 0;
   $("print-all").disabled = conn === 0 || busyU.size > 0;
-  $("power-all").disabled = conn === 0 || busyU.size > 0;
 }
 
 function setPrinter(name, status, langEff) {
@@ -304,7 +310,7 @@ async function poll() {
     if (!now.has(u)) {
       const n = slotOfUdid.get(u) || "?";
       logAct(`Slot ${String(n).padStart(2, "0")} · dispositivo desconectado`, "info");
-      slotOfUdid.delete(u); prevStatus.delete(u); seenUdids.delete(u);
+      slotOfUdid.delete(u); prevStatus.delete(u); prevHealth.delete(u); seenUdids.delete(u);
     }
   }
   devById = now;
@@ -328,6 +334,15 @@ async function poll() {
         soundError();
       } else if (prev !== "pareamento" && dev.status === "pareamento") {
         soundError();
+      }
+      // ajuste ao vivo da saúde da bateria (convergência p/ o valor exato)
+      const h = dev.battery_health;
+      const ph = prevHealth.get(dev.udid);
+      if (dev.status === "ok" && typeof h === "number") {
+        if (typeof ph === "number" && h !== ph) {
+          logAct(`Slot ${String(i + 1).padStart(2, "0")} · saúde ajustada ${ph}% → ${h}%`, "info");
+        }
+        prevHealth.set(dev.udid, h);
       }
       prevStatus.set(dev.udid, dev.status);
     } else {
@@ -467,31 +482,6 @@ $("sel-none").onclick = () => { selected.clear(); syncSelection(); };
 $("print-sel").onclick = () => printMany([...selected]);
 $("print-all").onclick = () => printMany([...devById.values()].filter((d) => d.serial).map((d) => d.udid));
 
-$("power-all").onclick = async () => {
-  const btn = $("power-all");
-  const conn = [...devById.values()].filter((d) => d.serial);
-  if (!conn.length) { toast("Nenhum aparelho conectado", "info", 1800); return; }
-  if (btn.disabled) return;
-
-  btn.disabled = true;
-  $("bulk-msg").textContent = `desligando ${conn.length}…`;
-  logAct(`Desligando todos (${conn.length})…`, "work");
-  try {
-    const r = await api("/api/power-all", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "shutdown" }),
-    });
-    const ok = (r.results || []).filter((x) => x.ok).length;
-    $("bulk-msg").textContent = `${ok}/${(r.results || []).length} desligado(s)`;
-    for (const x of r.results || []) if (!x.ok) {
-      const n = slotOfUdid.get(x.udid) || "?";
-      logAct(`Slot ${String(n).padStart(2, "0")} · não desligou: ${x.msg || ""}`, "err");
-    }
-    toast(`${ok} aparelho(s) desligado(s)`, ok ? "ok" : "err");
-  } catch (e) { $("bulk-msg").textContent = "erro: " + e; }
-  btn.disabled = false;
-  poll();
-};
 document.querySelectorAll(".stepper button[data-step]").forEach((b) => {
   b.onclick = () => {
     const i = $("copies");
