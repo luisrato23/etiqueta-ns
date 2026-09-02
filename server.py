@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.14.0"
+VERSION = "1.14.1"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,7 +37,7 @@ DEFAULT_CONFIG = {
     "http_port": 8765,
     "bind_host": "127.0.0.1",
     "poll_interval_seconds": 3,
-    "battery_poll_seconds": 10,
+    "battery_poll_seconds": 8,
     "label": {
         "language": "auto",
         "dpmm": 8,
@@ -1121,21 +1121,19 @@ def poller():
 
 
 def battery_poller():
-    """Releitura continua so da bateria (saude/ciclos) enquanto o aparelho
-       esta conectado. A cada poucos segundos re-amostra a capacidade e o
-       valor converge pro exato — sem margem de 1% pra mais/menos. Nao mexe
-       no status do card nem dispara som/log de leitura."""
+    """Leitura CONTINUA da bateria (saude/ciclos) enquanto o aparelho esta
+       conectado: re-amostra a capacidade a cada `battery_poll_seconds` sem
+       parar, mesmo depois de estabilizar, entao o valor fica sempre exato e
+       acompanha qualquer variacao. Nao mexe no status do card nem toca som."""
     while True:
-        wait = 3
+        wait = 2
         try:
-            every = max(4, int(CONFIG.get("battery_poll_seconds", 10)))
+            every = max(3, int(CONFIG.get("battery_poll_seconds", 8)))
             now = time.time()
             with LOCK:
-                # depois de estabilizar, espaça as releituras (ainda acompanha desvios)
                 targets = [u for u, r in DEVICES.items()
                            if r.get("status") == "ok" and r.get("serial")
-                           and now - r.get("batt_updated", 0) >= (
-                               max(every, 45) if r.get("batt_settled") else every)]
+                           and now - r.get("batt_updated", 0) >= every]
             for u in targets:
                 with LOCK:
                     base = dict(DEVICES.get(u, {}))

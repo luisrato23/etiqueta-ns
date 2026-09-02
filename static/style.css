@@ -257,9 +257,18 @@ button.kpi:hover{border-color:var(--text-3)}
 .ic-batt .bt-nub{fill:var(--border-2)}
 .ic-batt .bt-lvl{fill:var(--text-3);transition:width .5s ease}
 .batt-pct{font-size:.92rem;font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums}
-.batt-live{flex:0 0 auto;display:inline-flex;color:var(--text-3)}
-.batt-live .ic{width:12px;height:12px;animation:spin 2.2s linear infinite}
-@media (prefers-reduced-motion:reduce){.batt-live .ic{animation:none}}
+.batt-live{flex:0 0 auto;display:inline-flex;align-items:center}
+.batt-live .live-dot{width:6px;height:6px;border-radius:50%;background:var(--b-good);
+  animation:live-pulse 2.4s ease-in-out infinite}
+.batt-live.measuring .live-dot{background:var(--warn)}
+@keyframes live-pulse{
+  0%,100%{opacity:1;box-shadow:0 0 0 0 color-mix(in srgb,var(--b-good) 45%,transparent)}
+  50%{opacity:.45;box-shadow:0 0 0 4px transparent}}
+.batt-live.measuring .live-dot{animation-name:live-pulse-w}
+@keyframes live-pulse-w{
+  0%,100%{opacity:1;box-shadow:0 0 0 0 color-mix(in srgb,var(--warn) 45%,transparent)}
+  50%{opacity:.45;box-shadow:0 0 0 4px transparent}}
+@media (prefers-reduced-motion:reduce){.batt-live .live-dot{animation:none}}
 .batt-sub{font-size:.72rem;color:var(--text-3);display:flex;align-items:center;gap:4px;margin-left:auto}
 .batt-sub .ic{font-size:.85rem}
 .batt.b-good .bt-lvl{fill:var(--b-good)} .batt.b-good .batt-pct{color:var(--b-good)}

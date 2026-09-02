@@ -212,10 +212,14 @@ function fillSlot(node, dev, slotNo) {
   q(".batt-pct").textContent = reading ? "··"
     : (h === null || h === undefined ? "N/D" : h + "%");
   const known = !reading && h !== null && h !== undefined;
-  q(".batt-live").hidden = !(known && dev.batt_settled === false);
-  q(".batt-pct").title = known && dev.batt_samples
-    ? (dev.batt_settled ? `saúde confirmada · ${dev.batt_samples} leituras`
-      : `medindo a saúde exata · ${dev.batt_samples} leituras`)
+  const bl = q(".batt-live");
+  bl.hidden = !known;
+  bl.classList.toggle("measuring", known && dev.batt_settled === false);
+  const bAgo = dev.batt_updated ? Math.max(0, Math.round(Date.now() / 1000 - dev.batt_updated)) : null;
+  bl.title = known
+    ? (dev.batt_settled === false ? "Medindo a saúde exata" : "Leitura ao vivo")
+      + (dev.batt_samples ? ` · ${dev.batt_samples} leituras` : "")
+      + (bAgo !== null ? ` · há ${bAgo}s` : "")
     : "";
   q(".m-cc").textContent = reading ? "—"
     : (dev.cycle_count === null || dev.cycle_count === undefined ? "N/D" : dev.cycle_count);
