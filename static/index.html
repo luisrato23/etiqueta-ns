@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NS Label</title>
+<link rel="icon" type="image/png" href="/static/logo.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;600;700&display=swap">
@@ -49,7 +50,10 @@
 
   <header id="appbar">
     <div class="brand">
-      <span class="logo"><svg class="ic"><use href="#i-tag"/></svg></span>
+      <span class="logo">
+        <img src="/static/logo.png" alt="" onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+        <svg class="ic" hidden><use href="#i-tag"/></svg>
+      </span>
       <div class="brand-txt">
         <span class="brand-name">NS&nbsp;Label</span>
         <span class="brand-sub" id="sys-status"><i class="pip"></i> Sistema online</span>

@@ -94,9 +94,11 @@ body{
   box-shadow:var(--shadow-sm);
 }
 .brand{display:flex;align-items:center;gap:11px}
-.logo{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;
-  background:var(--primary);color:#fff}
-.logo .ic{font-size:1.15rem}
+.logo{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;
+  overflow:hidden;background:radial-gradient(120% 120% at 30% 20%,#161b22,#0b0d11);
+  box-shadow:inset 0 0 0 1px rgba(120,150,200,.18)}
+.logo img{width:88%;height:88%;object-fit:contain;display:block}
+.logo .ic{font-size:1.15rem;color:#5aa9ff}
 .brand-txt{display:flex;flex-direction:column;line-height:1.15}
 .brand-name{font-weight:700;font-size:1rem;letter-spacing:-.01em}
 .brand-sub{font-size:.72rem;color:var(--text-2);display:flex;align-items:center;gap:5px}
