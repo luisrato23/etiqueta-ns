@@ -421,13 +421,9 @@ async function printMany(udids) {
 
 async function powerOne(udid, action) {
   if (!udid) return;
-  const dev = devById.get(udid);
   const n = slotOfUdid.get(udid) || "?";
   const tag = `Slot ${String(n).padStart(2, "0")}`;
-  const nome = (dev && (dev.model_name || dev.model)) || "o aparelho";
   const verbo = action === "restart" ? "Reiniciar" : "Desligar";
-  if (!confirm(`${verbo} ${nome} (${tag})?` +
-      (action === "shutdown" ? "\n\nEle só volta pelo botão físico de ligar." : ""))) return;
   logAct(`${tag} · ${verbo.toLowerCase()}ando…`, "work");
   try {
     const r = await api("/api/power", {
@@ -471,11 +467,25 @@ $("sel-none").onclick = () => { selected.clear(); syncSelection(); };
 $("print-sel").onclick = () => printMany([...selected]);
 $("print-all").onclick = () => printMany([...devById.values()].filter((d) => d.serial).map((d) => d.udid));
 
+let powerAllArmed = null;
+function resetPowerAllBtn() {
+  $("power-all").innerHTML = icon("power") + " Desligar todos";
+}
 $("power-all").onclick = async () => {
+  const btn = $("power-all");
   const conn = [...devById.values()].filter((d) => d.serial);
   if (!conn.length) { toast("Nenhum aparelho conectado", "info", 1800); return; }
-  if (!confirm(`DESLIGAR todos os ${conn.length} aparelhos conectados?\n\n` +
-    `Cada um vai precisar do botão físico de ligar pra voltar.`)) return;
+
+  // 2 cliques: 1º arma o botão por 4s, 2º confirma
+  if (!powerAllArmed) {
+    btn.classList.add("armed");
+    btn.innerHTML = icon("power") + ` Confirmar — desligar ${conn.length}`;
+    powerAllArmed = setTimeout(() => { powerAllArmed = null; btn.classList.remove("armed"); resetPowerAllBtn(); }, 4000);
+    return;
+  }
+  clearTimeout(powerAllArmed); powerAllArmed = null;
+  btn.classList.remove("armed"); resetPowerAllBtn();
+
   $("bulk-msg").textContent = `desligando ${conn.length}…`;
   logAct(`Desligando todos (${conn.length})…`, "work");
   try {
