@@ -125,7 +125,7 @@ button.kpi:hover{border-color:var(--text-3)}
   padding-left:9px;margin-left:2px;border-left:1px solid var(--border-2);color:var(--text-2)}
 .pstat .pip{background:var(--text-3);box-shadow:none}
 .kpi-printer[data-s="online"] .pstat{color:var(--ok)} .kpi-printer[data-s="online"] .pstat .pip{background:var(--ok)}
-.kpi-printer[data-s="busy"] .pstat{color:var(--warn)} .kpi-printer[data-s="busy"] .pstat .pip{background:var(--warn);animation:pulse 1s infinite}
+.kpi-printer[data-s="busy"] .pstat{color:var(--warn)} .kpi-printer[data-s="busy"] .pstat .pip{background:var(--warn);animation:pulse 2s infinite}
 .kpi-printer[data-s="offline"] .pstat{color:var(--danger)} .kpi-printer[data-s="offline"] .pstat .pip{background:var(--danger)}
 .kpi-printer[data-s="offline"]{border-color:var(--danger)}
 
@@ -157,7 +157,7 @@ button.kpi:hover{border-color:var(--text-3)}
   align-items:center;gap:10px;max-width:360px}
 .updating-card .ic{font-size:2rem;color:var(--primary)}
 .updating-card h3{margin:0;font-size:1.05rem}
-.spin{animation:spin 1s linear infinite}
+.spin{animation:spin 1.7s linear infinite}
 
 /* ---------- toolbar ---------- */
 #toolbar{
@@ -219,16 +219,16 @@ button.kpi:hover{border-color:var(--text-3)}
 .slot[data-st="ok"] .status-pill{background:var(--ok-bg);color:var(--ok)}
 .slot[data-st="ok"] .sp-dot{background:var(--ok)}
 .slot[data-st="lendo"] .status-pill{background:var(--primary-weak);color:var(--primary)}
-.slot[data-st="lendo"] .sp-dot{background:var(--primary);animation:pulse 1s infinite}
+.slot[data-st="lendo"] .sp-dot{background:var(--primary);animation:pulse 2s infinite}
 .slot[data-st="pareamento"] .status-pill{background:var(--warn-bg);color:var(--warn)}
 .slot[data-st="pareamento"] .sp-dot{background:var(--warn)}
 .slot[data-st="erro"] .status-pill{background:var(--danger-bg);color:var(--danger)}
 .slot[data-st="erro"] .sp-dot{background:var(--danger)}
 .slot[data-st="desligando"] .status-pill{background:var(--warn-bg);color:var(--warn)}
-.slot[data-st="desligando"] .sp-dot{background:var(--warn);animation:pulse 1s infinite}
+.slot[data-st="desligando"] .sp-dot{background:var(--warn);animation:pulse 2s infinite}
 .slot[data-st="desligando"]{opacity:.6}
 .slot[data-job="printing"] .status-pill{background:var(--primary-weak);color:var(--primary)}
-.slot[data-job="printing"] .sp-dot{background:var(--primary);animation:pulse .8s infinite}
+.slot[data-job="printing"] .sp-dot{background:var(--primary);animation:pulse 1.6s infinite}
 .slot[data-job="sent"] .status-pill{background:var(--ok-bg);color:var(--ok)}
 .slot[data-job="sent"] .sp-dot{background:var(--ok)}
 .slot[data-job="fail"] .status-pill{background:var(--danger-bg);color:var(--danger)}
@@ -301,7 +301,7 @@ button.kpi:hover{border-color:var(--text-3)}
 .slot-progress span{display:block;height:100%;width:40%;background:var(--primary);border-radius:2px}
 .slot[data-st="lendo"] .slot-progress,.slot[data-job="printing"] .slot-progress{opacity:1}
 .slot[data-st="lendo"] .slot-progress span,.slot[data-job="printing"] .slot-progress span{
-  animation:indeterminate 1.1s ease-in-out infinite}
+  animation:indeterminate 2.2s ease-in-out infinite}
 
 /* selected */
 .slot.selected{border-color:var(--primary);background:var(--primary-weak)}
@@ -316,10 +316,10 @@ button.kpi:hover{border-color:var(--text-3)}
 .slot[data-st="lendo"] .dev-serial,
 .slot[data-st="lendo"] .batt-pct{color:transparent;position:relative;border-radius:4px;
   background:linear-gradient(90deg,var(--surface-3) 25%,var(--surface-2) 37%,var(--surface-3) 63%);
-  background-size:400% 100%;animation:shimmer 1.4s infinite}
+  background-size:400% 100%;animation:shimmer 2.6s infinite}
 
 /* just connected */
-.slot.just-in{animation:slot-in .34s cubic-bezier(.2,.7,.3,1)}
+.slot.just-in{animation:slot-in .5s cubic-bezier(.2,.7,.3,1)}
 .slot[data-job="sent"]{animation:sent-flash 1.6s ease}
 
 /* ---------- activity ---------- */

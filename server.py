@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.9.0"
+VERSION = "1.10.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -674,7 +674,7 @@ def power_device(udid, action):
     """action: shutdown | restart | sleep — via idevicediagnostics."""
     if action not in ("shutdown", "restart", "sleep"):
         return False, "acao invalida"
-    rc, out, err = run_tool("idevicediagnostics", ["-u", udid, action], timeout=20)
+    rc, out, err = run_tool("idevicediagnostics", ["-u", udid, action], timeout=10)
     msg = (out.decode("utf-8", "replace") + " " + err).strip()
     if rc == 0:
         with LOCK:
@@ -1104,7 +1104,6 @@ class Handler(BaseHTTPRequestHandler):
             for x in udids:
                 ok, msg = power_device(x, action)
                 results.append({"udid": x, "ok": ok, "msg": msg})
-                time.sleep(0.3)
             self._send(200, {"results": results})
         elif u.path == "/api/print":
             udid = body.get("udid", "")

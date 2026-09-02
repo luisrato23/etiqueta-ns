@@ -285,9 +285,12 @@
       </div>
       <div class="fld-group">
         <span class="fld-group-t">Atualização</span>
-        <div class="fld-row" style="justify-content:space-between">
+        <div class="fld-row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
           <span class="hint" id="cf-ver">Versão —</span>
-          <button type="button" id="cf-check" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Buscar / reinstalar</button>
+          <span style="display:flex;gap:6px">
+            <button type="button" id="cf-testnotif" class="btn" style="padding:5px 10px">Testar aviso</button>
+            <button type="button" id="cf-check" class="btn" style="padding:5px 10px"><svg class="ic"><use href="#i-refresh"/></svg> Buscar / reinstalar</button>
+          </span>
         </div>
         <label class="chk"><input type="checkbox" id="cf-autoupd"> Atualizar automaticamente quando sair versão nova</label>
       </div>

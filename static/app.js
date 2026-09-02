@@ -643,19 +643,25 @@ document.querySelectorAll("#cf-uiscale button").forEach((b) => (b.onclick = () =
   uiScaleVal = Number(b.dataset.v); LS.set("uiscale", uiScaleVal); applyUiScale(uiScaleVal); segSet("cf-uiscale", uiScaleVal);
 }));
 $("cf-sound-test").onclick = (e) => { e.stopPropagation(); const s = soundOn; soundOn = true; soundReady(); soundOn = s; };
+$("cf-testnotif").onclick = () => { cfg.close(); demoNotif(); };
 
 /* ====================== atualização ====================== */
 let verInfo = null;
 let updating = false;
 let autoUpd = LS.get("autoupd", true);
 let autoUpdTimer = null;
+let notifTimer = null;
+let notifDemo = false;
 
 function bellState() {
   const bell = $("btn-bell");
-  const up = verInfo && verInfo.update_available;
+  const up = notifDemo || (verInfo && verInfo.update_available);
   bell.classList.toggle("has-update", !!up);
   bell.querySelector(".bell-dot").hidden = !up;
-  bell.title = up ? `Atualização ${verInfo.latest} disponível` : "Sistema atualizado";
+  const v = verInfo || {};
+  bell.title = up
+    ? `Atualização ${notifDemo ? "(exemplo)" : v.latest} disponível — clique`
+    : `NS Label v${v.current || "—"}${v.checked === false ? " · sem internet" : " · atualizado"}`;
 }
 
 async function checkVersion(force) {
@@ -664,26 +670,43 @@ async function checkVersion(force) {
   } catch { return null; }
   const cur = verInfo.current || "—";
   $("cf-ver").textContent = verInfo.update_available
-    ? `Versão ${cur} · disponível ${verInfo.latest}`
+    ? `Versão ${cur} · nova: ${verInfo.latest}`
     : `Versão ${cur} · atualizado` + (verInfo.checked ? "" : " (sem internet?)");
-  bellState();
+  if (!notifDemo) bellState();
 
+  clearTimeout(notifTimer);
   if (verInfo.update_available) {
-    const seen = sessionStorage.getItem("nslabel.updSeen");
-    if (seen !== verInfo.latest) {
-      sessionStorage.setItem("nslabel.updSeen", verInfo.latest);
-      toast(`Nova versão ${verInfo.latest} disponível`, "info", 6000);
-      logAct(`Atualização ${verInfo.latest} disponível`, "info");
-    }
+    notifyUpdate(true);
     scheduleAutoUpdate();
   }
   return verInfo;
 }
 
+function notifyUpdate(first) {
+  if (!verInfo || !verInfo.update_available) return;
+  const seen = sessionStorage.getItem("nslabel.updSeen");
+  if (first && seen === verInfo.latest) { scheduleRenotify(); return; }
+  sessionStorage.setItem("nslabel.updSeen", verInfo.latest);
+  toast(`🔔 Nova versão ${verInfo.latest} disponível`, "info", 7000);
+  logAct(`Atualização ${verInfo.latest} disponível — clique no sino`, "info");
+  scheduleRenotify();
+}
+function scheduleRenotify() {
+  clearTimeout(notifTimer);
+  // re-avisa a cada 10 min enquanto pendente (ex.: auto-update desligado)
+  notifTimer = setTimeout(() => {
+    if (verInfo && verInfo.update_available && !updating) {
+      toast(`🔔 Atualização ${verInfo.latest} pendente`, "info", 6000);
+      scheduleRenotify();
+    }
+  }, 10 * 60 * 1000);
+}
+
 function scheduleAutoUpdate() {
   if (!autoUpd || updating || autoUpdTimer) return;
-  logAct(`Atualização automática para ${verInfo.latest} em instantes…`, "info");
-  autoUpdTimer = setTimeout(tryAutoUpdate, 12000);
+  logAct(`Atualização automática para ${verInfo.latest} em ~20s…`, "info");
+  toast(`Atualizando para ${verInfo.latest} em instantes — clique no sino p/ ver as novidades`, "info", 8000);
+  autoUpdTimer = setTimeout(tryAutoUpdate, 20000);
 }
 function tryAutoUpdate() {
   autoUpdTimer = null;
@@ -696,10 +719,20 @@ function tryAutoUpdate() {
   runUpdate();
 }
 
+// mostra como fica um aviso de atualização (para o operador ver o sino vermelho)
+function demoNotif() {
+  notifDemo = true;
+  bellState();
+  toast("🔔 Exemplo: nova versão disponível (é assim que avisa)", "info", 5000);
+  logAct("Teste de aviso de atualização", "info");
+  setTimeout(() => { notifDemo = false; bellState(); }, 15000);
+}
+
 const updDlg = $("upd-dlg");
 $("btn-bell").onclick = () => {
+  if (notifDemo) { toast("🔔 Exemplo de aviso (Config → Interface para testar de novo)", "info", 3000); return; }
   if (!verInfo || !verInfo.update_available) {
-    toast("Você já está na versão mais recente", "ok", 2000);
+    toast(`Você já está na versão mais recente (v${(verInfo && verInfo.current) || "—"})`, "ok", 2500);
     return;
   }
   clearTimeout(autoUpdTimer); autoUpdTimer = null;   // pausa o auto enquanto a janela ta aberta
