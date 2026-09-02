@@ -481,6 +481,7 @@ async function openCfg() {
   $("cf-slots").value = ui.slots ?? SLOTS;
   $("cf-auto").checked = autoUpdate;
   $("cf-interval").value = intervalSec;
+  $("cf-autoupd").checked = autoUpd;
   $("cf-lang").value = L.language || "auto";
   segSet("cf-theme", themeVal || "system");
   segSet("cf-uiscale", uiScaleVal || 100);
@@ -524,6 +525,8 @@ async function saveCfg(silent) {
   autoUpdate = $("cf-auto").checked; LS.set("auto", autoUpdate);
   intervalSec = Math.max(1, Math.min(15, parseInt($("cf-interval").value || "3", 10)));
   LS.set("interval", intervalSec);
+  autoUpd = $("cf-autoupd").checked; LS.set("autoupd", autoUpd);
+  if (autoUpd && verInfo && verInfo.update_available) scheduleAutoUpdate();
   startPolling();
 
   const r = await api("/api/config", {
@@ -561,6 +564,17 @@ document.querySelectorAll("#cf-uiscale button").forEach((b) => (b.onclick = () =
 
 /* ====================== atualização ====================== */
 let verInfo = null;
+let updating = false;
+let autoUpd = LS.get("autoupd", true);
+let autoUpdTimer = null;
+
+function bellState() {
+  const bell = $("btn-bell");
+  const up = verInfo && verInfo.update_available;
+  bell.classList.toggle("has-update", !!up);
+  bell.querySelector(".bell-dot").hidden = !up;
+  bell.title = up ? `Atualização ${verInfo.latest} disponível` : "Sistema atualizado";
+}
 
 async function checkVersion(force) {
   try {
@@ -568,46 +582,70 @@ async function checkVersion(force) {
   } catch { return null; }
   const cur = verInfo.current || "—";
   $("cf-ver").textContent = verInfo.update_available
-    ? `Versão ${cur} · nova: ${verInfo.latest}`
+    ? `Versão ${cur} · disponível ${verInfo.latest}`
     : `Versão ${cur} · atualizado` + (verInfo.checked ? "" : " (sem internet?)");
+  bellState();
 
-  const btn = $("btn-update");
   if (verInfo.update_available) {
-    btn.classList.remove("hidden");
-    $("upd-txt").textContent = `Atualizar · ${verInfo.latest}`;
     const seen = sessionStorage.getItem("nslabel.updSeen");
     if (seen !== verInfo.latest) {
       sessionStorage.setItem("nslabel.updSeen", verInfo.latest);
       toast(`Nova versão ${verInfo.latest} disponível`, "info", 6000);
       logAct(`Atualização ${verInfo.latest} disponível`, "info");
     }
-  } else {
-    btn.classList.add("hidden");
+    scheduleAutoUpdate();
   }
   return verInfo;
 }
 
+function scheduleAutoUpdate() {
+  if (!autoUpd || updating || autoUpdTimer) return;
+  logAct(`Atualização automática para ${verInfo.latest} em instantes…`, "info");
+  autoUpdTimer = setTimeout(tryAutoUpdate, 12000);
+}
+function tryAutoUpdate() {
+  autoUpdTimer = null;
+  if (!autoUpd || updating || !verInfo || !verInfo.update_available) return;
+  if (busyU.size > 0) {                 // nao interrompe impressao
+    autoUpdTimer = setTimeout(tryAutoUpdate, 8000);
+    return;
+  }
+  toast(`Atualizando para ${verInfo.latest}…`, "info", 4000);
+  runUpdate();
+}
+
 const updDlg = $("upd-dlg");
-$("btn-update").onclick = () => {
-  if (!verInfo) return;
+$("btn-bell").onclick = () => {
+  if (!verInfo || !verInfo.update_available) {
+    toast("Você já está na versão mais recente", "ok", 2000);
+    return;
+  }
+  clearTimeout(autoUpdTimer); autoUpdTimer = null;   // pausa o auto enquanto a janela ta aberta
   $("upd-from").textContent = verInfo.current;
   $("upd-to").textContent = verInfo.latest;
   $("upd-notes").textContent = verInfo.notes || "";
   updDlg.showModal();
 };
-$("upd-close").onclick = () => updDlg.close();
-$("upd-later").onclick = () => updDlg.close();
+$("upd-close").onclick = () => { updDlg.close(); scheduleAutoUpdate(); };
+$("upd-later").onclick = () => { updDlg.close(); scheduleAutoUpdate(); };
+$("upd-go").onclick = () => { updDlg.close(); runUpdate(); };
+
 $("cf-check").onclick = async () => {
   $("cf-ver").textContent = "verificando…";
   const v = await checkVersion(true);
-  toast(v && v.update_available ? `Nova versão ${v.latest} disponível`
-    : "Você já está na versão mais recente", v && v.update_available ? "info" : "ok");
+  if (v && v.update_available) { toast(`Nova versão ${v.latest} disponível`, "info"); return; }
+  if (confirm("Você já está na versão mais recente.\nReinstalar mesmo assim? (baixa e troca os arquivos de novo)")) {
+    cfg.close();
+    runUpdate(true);
+  }
 };
 
-$("upd-go").onclick = async () => {
-  updDlg.close();
+async function runUpdate(reinstall) {
+  if (updating) return;
+  updating = true;
+  clearTimeout(autoUpdTimer); autoUpdTimer = null;
   $("updating").classList.remove("hidden");
-  $("updating-txt").textContent = "Baixando atualização…";
+  $("updating-txt").textContent = reinstall ? "Reinstalando…" : "Baixando atualização…";
   stopPolling();
   let r;
   try {
@@ -615,27 +653,33 @@ $("upd-go").onclick = async () => {
   } catch { r = { ok: false, msg: "sem resposta" }; }
   if (!r.ok) {
     $("updating-txt").textContent = "Falha: " + (r.msg || "erro");
-    setTimeout(() => { $("updating").classList.add("hidden"); startPolling(); }, 4000);
+    logAct("Atualização falhou: " + (r.msg || ""), "err");
+    setTimeout(() => { $("updating").classList.add("hidden"); updating = false; startPolling(); }, 5000);
     return;
   }
   $("updating-txt").textContent = "Instalando e reiniciando…";
   waitForRestart(verInfo ? verInfo.current : null);
-};
+}
 
 async function waitForRestart(oldVer) {
   const started = Date.now();
+  let sawDown = false;
   const tick = async () => {
     if (Date.now() - started > 120000) {
-      $("updating-txt").textContent = "Demorou mais que o esperado — recarregue com F5.";
+      $("updating-txt").textContent = "Demorou mais que o esperado — recarregue a página (F5).";
       return;
     }
     try {
       const v = await api("/api/version");
-      if (v && v.current && v.current !== oldVer) { location.reload(); return; }
-    } catch { /* servidor reiniciando */ }
-    setTimeout(tick, 2500);
+      if (v && v.current && (v.current !== oldVer || sawDown)) {
+        $("updating-txt").textContent = "Concluído — recarregando…";
+        setTimeout(() => location.reload(), 700);
+        return;
+      }
+    } catch { sawDown = true; }
+    setTimeout(tick, 2000);
   };
-  setTimeout(tick, 5000);
+  setTimeout(tick, 4000);
 }
 
 /* ====================== start ====================== */
@@ -644,4 +688,4 @@ renderActivity();
 poll();
 startPolling();
 checkVersion();
-setInterval(() => checkVersion(), 30 * 60 * 1000);
+setInterval(() => checkVersion(), 20 * 60 * 1000);

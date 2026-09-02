@@ -41,6 +41,7 @@
     <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></symbol>
     <symbol id="i-spark" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></symbol>
   </defs>
 </svg>
 
@@ -79,11 +80,11 @@
     </div>
 
     <div class="appbar-actions">
-      <button id="btn-update" class="btn upd hidden">
-        <svg class="ic"><use href="#i-spark"/></svg>
-        <span id="upd-txt">Atualização disponível</span>
-      </button>
       <span class="last-read" id="last-read"><svg class="ic"><use href="#i-clock"/></svg> —</span>
+      <button id="btn-bell" class="btn icon-btn bell" title="Atualizações" aria-label="Atualizações">
+        <svg class="ic"><use href="#i-bell"/></svg>
+        <i class="bell-dot" hidden></i>
+      </button>
       <button id="btn-refresh" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Reler</button>
       <button id="btn-gear" class="btn icon-btn" title="Configurações" aria-label="Configurações"><svg class="ic"><use href="#i-settings"/></svg></button>
     </div>
@@ -271,8 +272,9 @@
         <span class="fld-group-t">Atualização</span>
         <div class="fld-row" style="justify-content:space-between">
           <span class="hint" id="cf-ver">Versão —</span>
-          <button type="button" id="cf-check" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Buscar atualização</button>
+          <button type="button" id="cf-check" class="btn"><svg class="ic"><use href="#i-refresh"/></svg> Buscar / reinstalar</button>
         </div>
+        <label class="chk"><input type="checkbox" id="cf-autoupd"> Atualizar automaticamente quando sair versão nova</label>
       </div>
     </section>
   </div>

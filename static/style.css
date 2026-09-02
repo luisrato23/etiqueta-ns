@@ -129,11 +129,14 @@ button.kpi:hover{border-color:var(--text-3)}
 .last-read{font-size:.76rem;color:var(--text-2);display:flex;align-items:center;gap:5px}
 .last-read .ic{font-size:.95rem;color:var(--text-3)}
 
-/* botao de atualizacao */
-.btn.upd{background:var(--primary);border-color:var(--primary);color:#fff;font-weight:600;
-  box-shadow:0 0 0 0 var(--primary-ring);animation:upd-glow 2.4s ease-in-out infinite}
-.btn.upd:hover{background:var(--primary-h);border-color:var(--primary-h)}
-@keyframes upd-glow{0%,100%{box-shadow:0 0 0 0 var(--primary-ring)}50%{box-shadow:0 0 0 5px transparent}}
+/* sino de atualizacao */
+.bell{position:relative;color:var(--text-3)}
+.bell:hover{color:var(--text)}
+.bell.has-update{color:var(--danger);border-color:var(--danger);
+  animation:bell-ring 2.6s ease-in-out infinite}
+.bell-dot{position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;
+  background:var(--danger);border:2px solid var(--surface)}
+@keyframes bell-ring{0%,92%,100%{transform:rotate(0)}94%{transform:rotate(-11deg)}96%{transform:rotate(9deg)}98%{transform:rotate(-5deg)}}
 
 .upd-body{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
 .upd-ver{margin:0;font-size:.95rem}

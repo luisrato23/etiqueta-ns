@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.5.0"
+VERSION = "1.6.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -284,10 +284,25 @@ def apply_update():
         with zipfile.ZipFile(zpath) as z:
             z.extractall(updir)
         root = os.path.join(updir, "Etiqueta-NS")
-        if not os.path.isfile(os.path.join(root, "server.py")):
+        new_server = os.path.join(root, "server.py")
+        if not os.path.isfile(new_server):
             raise RuntimeError("pacote invalido (server.py nao encontrado)")
 
-        # troca os arquivos aqui mesmo — sem xcopy/robocopy
+        # 1) o novo server.py precisa pelo menos compilar
+        with open(new_server, "r", encoding="utf-8") as fh:
+            compile(fh.read(), "server.py", "exec")
+
+        # 2) backup do que da pra reverter (server.py + static) p/ o restart.bat
+        bkp = os.path.join(BASE_DIR, "_backup")
+        shutil.rmtree(bkp, ignore_errors=True)
+        os.makedirs(os.path.join(bkp, "static"), exist_ok=True)
+        shutil.copy2(os.path.join(BASE_DIR, "server.py"), os.path.join(bkp, "server.py"))
+        for n in ("index.html", "app.js", "style.css"):
+            p = os.path.join(STATIC_DIR, n)
+            if os.path.isfile(p):
+                shutil.copy2(p, os.path.join(bkp, "static", n))
+
+        # 3) troca os arquivos aqui mesmo — sem xcopy/robocopy
         fails = _copy_tree_over(root, BASE_DIR)
         for f in fails:
             print(f"[update] nao trocou {f}")
@@ -297,7 +312,7 @@ def apply_update():
         except OSError:
             pass
 
-        # o .bat so encerra este servidor e religa
+        # 4) o .bat encerra este servidor, religa e, se nao subir, reverte
         bat = os.path.join(BASE_DIR, "restart.bat")
         port = str(CONFIG.get("http_port", 8765))
         subprocess.Popen(
