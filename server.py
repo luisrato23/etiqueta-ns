@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -240,9 +240,33 @@ def check_update(force=False):
 
 _UPDATING = False
 
+# arquivos que NUNCA sao sobrescritos por uma atualizacao
+_UPDATE_SKIP = {"config.json", "server.log", "server.log.old", "update.log",
+               "_last_label.txt", "_last_label.zpl"}
+
+
+def _copy_tree_over(src, dst):
+    """Copia src/* -> dst/*, sobrescrevendo. Pula _UPDATE_SKIP. Best-effort."""
+    fails = []
+    for name in os.listdir(src):
+        if name in _UPDATE_SKIP or name.startswith("_"):
+            continue
+        s, d = os.path.join(src, name), os.path.join(dst, name)
+        try:
+            if os.path.isdir(s):
+                os.makedirs(d, exist_ok=True)
+                fails += _copy_tree_over(s, d)
+            else:
+                tmp = d + ".new"
+                shutil.copy2(s, tmp)
+                os.replace(tmp, d)          # troca atomica
+        except Exception as e:
+            fails.append(f"{name}: {e}")
+    return fails
+
 
 def apply_update():
-    """Baixa o zip da ultima release, extrai e dispara o apply_update.bat."""
+    """Baixa a ultima release, troca os arquivos (em Python) e reinicia."""
     global _UPDATING
     if _UPDATING:
         return False, "atualizacao ja em andamento"
@@ -250,11 +274,10 @@ def apply_update():
     url = f"https://github.com/{repo}/releases/latest/download/Etiqueta-NS.zip"
     zpath = os.path.join(BASE_DIR, "_update.zip")
     updir = os.path.join(BASE_DIR, "_update")
-    bat = os.path.join(BASE_DIR, "apply_update.bat")
     try:
         _UPDATING = True
         req = urllib.request.Request(url, headers={"User-Agent": "NS-Label/" + VERSION})
-        with urllib.request.urlopen(req, timeout=60) as r, open(zpath, "wb") as f:
+        with urllib.request.urlopen(req, timeout=90) as r, open(zpath, "wb") as f:
             shutil.copyfileobj(r, f)
         if os.path.isdir(updir):
             shutil.rmtree(updir, ignore_errors=True)
@@ -263,21 +286,25 @@ def apply_update():
         root = os.path.join(updir, "Etiqueta-NS")
         if not os.path.isfile(os.path.join(root, "server.py")):
             raise RuntimeError("pacote invalido (server.py nao encontrado)")
-        src_bat = os.path.join(root, "apply_update.bat")
-        if not os.path.isfile(src_bat):
-            src_bat = bat
-        if not os.path.isfile(src_bat):
-            raise RuntimeError("apply_update.bat nao encontrado")
-        # roda a partir de uma copia com nome fixo, para o robocopy poder
-        # sobrescrever o apply_update.bat sem matar o script em execucao
-        runner = os.path.join(BASE_DIR, "_run_update.bat")
-        shutil.copy2(src_bat, runner)
+
+        # troca os arquivos aqui mesmo — sem xcopy/robocopy
+        fails = _copy_tree_over(root, BASE_DIR)
+        for f in fails:
+            print(f"[update] nao trocou {f}")
+        shutil.rmtree(updir, ignore_errors=True)
+        try:
+            os.remove(zpath)
+        except OSError:
+            pass
+
+        # o .bat so encerra este servidor e religa
+        bat = os.path.join(BASE_DIR, "restart.bat")
         port = str(CONFIG.get("http_port", 8765))
         subprocess.Popen(
-            ["cmd", "/c", runner, str(os.getpid()), port], cwd=BASE_DIR,
+            ["cmd", "/c", bat, str(os.getpid()), port], cwd=BASE_DIR,
             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
-        return True, "baixado"
+        return True, ("ok" + (f" ({len(fails)} arquivo(s) mantidos)" if fails else ""))
     except Exception as e:
         _UPDATING = False
         return False, str(e)[:200]
