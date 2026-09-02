@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etiqueta - NS</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="head-row">
+    <h1>Etiqueta&nbsp;-&nbsp;NS</h1>
+    <span id="printer" class="pill">impressora: —</span>
+    <span id="scan" class="pill">—</span>
+    <button id="btn-refresh" class="ghost">Reler agora</button>
+    <button id="btn-gear" class="ghost gear" title="Configurações" aria-label="Configurações">⚙</button>
+  </div>
+
+  <div class="action-row">
+    <button id="sel-all" class="ghost">Selecionar todas</button>
+    <button id="sel-none" class="ghost">Limpar seleção</button>
+    <span class="sep"></span>
+    <label>cópias <input type="number" id="copies" value="1" min="1" max="50"></label>
+    <span class="sep"></span>
+    <button id="print-sel" class="primary">Imprimir selecionadas (<span id="n-sel">0</span>)</button>
+    <button id="print-all" class="primary">Imprimir todas conectadas (<span id="n-conn">0</span>)</button>
+    <span id="bulk-msg" class="muted"></span>
+  </div>
+</header>
+
+<main id="grid"></main>
+
+<template id="slot-tpl">
+  <section class="slot">
+    <div class="slot-empty">
+      <span class="slot-n">Slot</span>
+      <span class="muted">sem aparelho</span>
+    </div>
+    <div class="slot-dev">
+      <div class="dev-head">
+        <span class="check" aria-hidden="true"></span>
+        <b class="dev-model">iPad</b>
+      </div>
+      <div class="dev-sub"><span class="dev-cap"></span><span class="dev-color"></span><span class="dev-ios"></span></div>
+      <div class="dev-serial mono">—</div>
+      <div class="dev-metrics">
+        <span>BT <b class="m-bt">—</b></span>
+        <span>CC <b class="m-cc">—</b></span>
+        <span>carga <b class="m-charge">—</b></span>
+      </div>
+      <div class="dev-note"></div>
+      <div class="dev-foot">
+        <button class="btn-pair ghost hidden">Parear / Confiar</button>
+        <button class="btn-print ghost">Imprimir esta</button>
+        <button class="btn-cmd ghost">Ver comando</button>
+        <span class="print-msg"></span>
+      </div>
+    </div>
+  </section>
+</template>
+
+<dialog id="cfg-dlg">
+  <form method="dialog"><button class="x" value="cancel" aria-label="Fechar">×</button></form>
+  <h3>⚙ Configurações</h3>
+
+  <div class="cfg-grid">
+    <label class="wide">Impressora
+      <span class="row">
+        <select id="cf-printer"></select>
+        <button type="button" id="cf-printer-reload" class="ghost mini" title="Atualizar lista">↻</button>
+      </span>
+    </label>
+
+    <label>Linguagem
+      <select id="cf-lang">
+        <option value="auto">Automático</option>
+        <option value="epl">EPL (Elgin, Argox, TSC…)</option>
+        <option value="zpl">ZPL (Zebra…)</option>
+      </select>
+      <small id="cf-lang-eff" class="muted"></small>
+    </label>
+
+    <label>Tamanho geral
+      <span class="row"><input type="number" id="cf-scale" min="40" max="150" step="5"> %</span>
+    </label>
+
+    <label>Deslocar ← →
+      <input type="number" id="cf-ox" step="4"> <small class="muted">pontos (8 = 1 mm)</small>
+    </label>
+    <label>Deslocar ↑ ↓
+      <input type="number" id="cf-oy" step="4"> <small class="muted">pontos</small>
+    </label>
+
+    <label>Escurecimento
+      <input type="number" id="cf-dark" min="0" max="15" step="1">
+      <small class="muted">0–15. Baixe se sair grosso/borrado.</small>
+    </label>
+
+    <label class="chk"><input type="checkbox" id="cf-flip"> Girar etiqueta 180°</label>
+    <label class="chk"><input type="checkbox" id="cf-bold"> Letras em negrito</label>
+    <label class="chk"><input type="checkbox" id="cf-labels"> Mostrar "BT" / "CC"</label>
+    <label class="chk"><input type="checkbox" id="cf-color"> Mostrar a cor do aparelho</label>
+  </div>
+
+  <div class="dlg-actions">
+    <button type="button" id="cf-test" class="ghost">Imprimir etiqueta de teste</button>
+    <span id="cf-msg" class="muted"></span>
+    <span style="flex:1"></span>
+    <button type="button" id="cf-save" class="primary">Salvar</button>
+  </div>
+</dialog>
+
+<dialog id="cmd-dlg">
+  <h3>Comando enviado à impressora</h3>
+  <pre id="cmd-text"></pre>
+  <div class="dlg-actions">
+    <button id="cmd-copy" class="ghost">Copiar</button>
+    <button id="cmd-close" class="primary">Fechar</button>
+  </div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

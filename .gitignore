@@ -1,0 +1,13 @@
+# configuração local calibrada de cada máquina
+/config.json
+
+# runtime
+__pycache__/
+*.pyc
+/server.log
+/server.log.old
+/_last_label.txt
+/_last_label.zpl
+
+# binários libimobiledevice — vão só no pacote de release (Etiqueta-NS.zip)
+/vendor/

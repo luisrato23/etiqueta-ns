@@ -1,0 +1,1021 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Servidor local para gerar etiquetas 60x40 de iPads conectados por USB.
+
+- Le nº de serie, saude da bateria e ciclos de cada iPad via libimobiledevice.
+- Serve uma interface no navegador (http://localhost:8765).
+- Imprime a etiqueta em ZPL direto no spooler da ELGIN L42PRO (RAW).
+
+Sem dependencias externas: usa apenas a biblioteca padrao do Python.
+"""
+
+import json
+import os
+import re
+import subprocess
+import sys
+import threading
+import time
+import unicodedata
+import plistlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlparse, parse_qs
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+BIN_DIR = os.path.join(BASE_DIR, "vendor", "libimobile")
+
+DEFAULT_CONFIG = {
+    "printer_name": "",
+    "http_port": 8765,
+    "bind_host": "127.0.0.1",
+    "poll_interval_seconds": 3,
+    "label": {
+        "language": "auto",
+        "dpmm": 8,
+        "width_mm": 60,
+        "height_mm": 40,
+        "gap_dots": 24,
+        "offset_x": 0,
+        "offset_y": 0,
+        "darkness": 10,
+        "print_speed": 3,
+        "strip_accents": True,
+        "element_scale": 0.8,
+        "show_color": True,
+        "bottom_labels": True,
+        "flip_180": True,
+        "text_bold": False,
+        "barcode_module": 2,
+        "barcode_height": 150,
+        "copies_default": 1,
+    },
+    "diagnostics_commands": [
+        ["ioregentry", "AppleSmartBattery"],
+        ["diagnostics", "GasGauge"],
+        ["ioregentry", "AppleARMPMUCharger"],
+    ],
+}
+
+
+def load_config():
+    cfg = json.loads(json.dumps(DEFAULT_CONFIG))  # deep copy
+    path = os.path.join(BASE_DIR, "config.json")
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                user = json.load(f)
+            for k, v in user.items():
+                if isinstance(v, dict) and isinstance(cfg.get(k), dict):
+                    cfg[k].update(v)
+                else:
+                    cfg[k] = v
+        except Exception as e:
+            print(f"[config] erro lendo config.json, usando padrao: {e}")
+    return cfg
+
+
+CONFIG = load_config()
+
+
+def save_config():
+    try:
+        with open(os.path.join(BASE_DIR, "config.json"), "w", encoding="utf-8") as fh:
+            json.dump(CONFIG, fh, ensure_ascii=False, indent=2)
+        return True
+    except Exception as e:
+        print(f"[config] nao consegui gravar: {e}")
+        return False
+
+
+# ------------------------------- impressoras -------------------------------
+
+PRINTERS = []          # [{"name","driver","port"}], atualizado ao iniciar / via API
+_VIRTUAL = ("pdf", "xps", "onenote", "fax", "anydesk", "document writer",
+            "print to", "microsoft ", "send to ", "\\\\")
+
+
+def list_windows_printers():
+    try:
+        p = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-Printer | Select-Object Name,DriverName,PortName | "
+             "ConvertTo-Json -Compress"],
+            capture_output=True, text=True, timeout=20,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        data = json.loads(p.stdout.strip() or "[]")
+        if isinstance(data, dict):
+            data = [data]
+        out = []
+        for d in data:
+            if d.get("Name"):
+                out.append({"name": d["Name"],
+                            "driver": d.get("DriverName") or "",
+                            "port": d.get("PortName") or ""})
+        return out
+    except Exception as e:
+        print(f"[impressoras] {e}")
+        return []
+
+
+def refresh_printers():
+    global PRINTERS
+    PRINTERS = list_windows_printers()
+    return PRINTERS
+
+
+def _printer_blob(name):
+    for p in PRINTERS:
+        if p["name"] == name:
+            return (p["name"] + " " + p["driver"] + " " + p["port"]).lower()
+    return (name or "").lower()
+
+
+def autopick_printer():
+    real = [p for p in PRINTERS
+            if not any(v in (p["name"] + " " + p["driver"]).lower() for v in _VIRTUAL)]
+    label_kw = ("elgin", "zebra", "tsc", "argox", "godex", "bematech", "label",
+                "l42", "zdesigner", "etiq", "thermal", "term")
+    for p in real:
+        if any(k in (p["name"] + " " + p["driver"]).lower() for k in label_kw):
+            return p["name"]
+    if real:
+        return real[0]["name"]
+    return PRINTERS[0]["name"] if PRINTERS else CONFIG.get("printer_name", "")
+
+
+def resolve_language():
+    lang = str(CONFIG["label"].get("language", "auto")).lower()
+    if lang in ("epl", "zpl"):
+        return lang
+    blob = _printer_blob(CONFIG.get("printer_name", ""))
+    zpl_kw = ("zebra", "zpl", "zdesigner", "gk420", "gx430", "zd220", "zd230",
+              "zd410", "zt230", "gc420")
+    return "zpl" if any(k in blob for k in zpl_kw) else "epl"
+
+
+def ensure_printer_configured():
+    refresh_printers()
+    names = [p["name"] for p in PRINTERS]
+    if CONFIG.get("printer_name") not in names:
+        pick = autopick_printer()
+        if pick:
+            CONFIG["printer_name"] = pick
+            save_config()
+            print(f"[impressoras] usando '{pick}'")
+
+
+# ProductType -> nome comercial (sem acento; cai no proprio ProductType se faltar)
+MODEL_NAMES = {
+    "iPad6,11": "iPad (5a geracao)", "iPad6,12": "iPad (5a geracao)",
+    "iPad7,5": "iPad (6a geracao)", "iPad7,6": "iPad (6a geracao)",
+    "iPad7,11": "iPad (7a geracao)", "iPad7,12": "iPad (7a geracao)",
+    "iPad11,6": "iPad (8a geracao)", "iPad11,7": "iPad (8a geracao)",
+    "iPad12,1": "iPad (9a geracao)", "iPad12,2": "iPad (9a geracao)",
+    "iPad13,18": "iPad (10a geracao)", "iPad13,19": "iPad (10a geracao)",
+    "iPad15,7": "iPad (A16)", "iPad15,8": "iPad (A16)",
+    "iPad4,1": "iPad Air", "iPad4,2": "iPad Air", "iPad4,3": "iPad Air",
+    "iPad5,3": "iPad Air 2", "iPad5,4": "iPad Air 2",
+    "iPad11,3": "iPad Air (3a geracao)", "iPad11,4": "iPad Air (3a geracao)",
+    "iPad13,1": "iPad Air (4a geracao)", "iPad13,2": "iPad Air (4a geracao)",
+    "iPad13,16": "iPad Air (5a geracao)", "iPad13,17": "iPad Air (5a geracao)",
+    "iPad14,8": "iPad Air 11 (M2)", "iPad14,9": "iPad Air 11 (M2)",
+    "iPad14,10": "iPad Air 13 (M2)", "iPad14,11": "iPad Air 13 (M2)",
+    "iPad15,3": "iPad Air 11 (M3)", "iPad15,4": "iPad Air 11 (M3)",
+    "iPad15,5": "iPad Air 13 (M3)", "iPad15,6": "iPad Air 13 (M3)",
+    "iPad2,5": "iPad mini", "iPad2,6": "iPad mini", "iPad2,7": "iPad mini",
+    "iPad4,4": "iPad mini 2", "iPad4,5": "iPad mini 2", "iPad4,6": "iPad mini 2",
+    "iPad4,7": "iPad mini 3", "iPad4,8": "iPad mini 3", "iPad4,9": "iPad mini 3",
+    "iPad5,1": "iPad mini 4", "iPad5,2": "iPad mini 4",
+    "iPad11,1": "iPad mini (5a geracao)", "iPad11,2": "iPad mini (5a geracao)",
+    "iPad14,1": "iPad mini (6a geracao)", "iPad14,2": "iPad mini (6a geracao)",
+    "iPad16,1": "iPad mini (A17 Pro)", "iPad16,2": "iPad mini (A17 Pro)",
+    "iPad6,3": "iPad Pro 9,7", "iPad6,4": "iPad Pro 9,7",
+    "iPad6,7": "iPad Pro 12,9", "iPad6,8": "iPad Pro 12,9",
+    "iPad7,1": "iPad Pro 12,9 (2a ger)", "iPad7,2": "iPad Pro 12,9 (2a ger)",
+    "iPad7,3": "iPad Pro 10,5", "iPad7,4": "iPad Pro 10,5",
+    "iPad8,1": "iPad Pro 11", "iPad8,2": "iPad Pro 11",
+    "iPad8,3": "iPad Pro 11", "iPad8,4": "iPad Pro 11",
+    "iPad8,5": "iPad Pro 12,9 (3a ger)", "iPad8,6": "iPad Pro 12,9 (3a ger)",
+    "iPad8,7": "iPad Pro 12,9 (3a ger)", "iPad8,8": "iPad Pro 12,9 (3a ger)",
+    "iPad8,9": "iPad Pro 11 (2a ger)", "iPad8,10": "iPad Pro 11 (2a ger)",
+    "iPad8,11": "iPad Pro 12,9 (4a ger)", "iPad8,12": "iPad Pro 12,9 (4a ger)",
+    "iPad13,4": "iPad Pro 11 (3a ger)", "iPad13,5": "iPad Pro 11 (3a ger)",
+    "iPad13,6": "iPad Pro 11 (3a ger)", "iPad13,7": "iPad Pro 11 (3a ger)",
+    "iPad13,8": "iPad Pro 12,9 (5a ger)", "iPad13,9": "iPad Pro 12,9 (5a ger)",
+    "iPad13,10": "iPad Pro 12,9 (5a ger)", "iPad13,11": "iPad Pro 12,9 (5a ger)",
+    "iPad14,3": "iPad Pro 11 (4a ger)", "iPad14,4": "iPad Pro 11 (4a ger)",
+    "iPad14,5": "iPad Pro 12,9 (6a ger)", "iPad14,6": "iPad Pro 12,9 (6a ger)",
+    "iPad16,3": "iPad Pro 11 (M4)", "iPad16,4": "iPad Pro 11 (M4)",
+    "iPad16,5": "iPad Pro 13 (M4)", "iPad16,6": "iPad Pro 13 (M4)",
+    "iPhone14,7": "iPhone 14", "iPhone14,8": "iPhone 14 Plus",
+    "iPhone15,2": "iPhone 14 Pro", "iPhone15,3": "iPhone 14 Pro Max",
+    "iPhone15,4": "iPhone 15", "iPhone15,5": "iPhone 15 Plus",
+    "iPhone16,1": "iPhone 15 Pro", "iPhone16,2": "iPhone 15 Pro Max",
+    "iPhone17,1": "iPhone 16 Pro", "iPhone17,2": "iPhone 16 Pro Max",
+    "iPhone17,3": "iPhone 16", "iPhone17,4": "iPhone 16 Plus",
+    "iPhone17,5": "iPhone 16e",
+}
+
+
+def marketing_name(product_type, fallback=None):
+    return (MODEL_NAMES.get(product_type or "")
+            or fallback or product_type or "")
+
+
+# DeviceColor / DeviceEnclosureColor -> (nome, hex p/ o preview).
+# Codigos antigos sao numericos; recentes vem em hex tipo "#3d3d3d".
+# Mapa aproximado; ajuste em config.json -> "color_names": { "2": "Prata", ... }
+COLOR_NAMES = {
+    "0": ("Branco", "#ededed"),
+    "1": ("Preto", "#1c1c1e"),
+    "2": ("Prata", "#d6d7da"),
+    "3": ("Dourado", "#f7e8c9"),
+    "4": ("Rose", "#e7c5bf"),
+    "5": ("Cinza-espacial", "#57575b"),
+    "6": ("Vermelho", "#b23b3b"),
+    "7": ("Amarelo", "#f2d14e"),
+    "8": ("Azul", "#8fb6d6"),
+    "9": ("Verde", "#a7bfa5"),
+    "10": ("Roxo", "#b7b2d6"),
+    "#3d3d3d": ("Cinza-espacial", "#3d3d3d"),
+    "#1f2020": ("Cinza-espacial", "#2a2b2b"),
+    "#e1e4e3": ("Prata", "#e1e4e3"),
+    "#f2f2f2": ("Prata", "#f2f2f2"),
+    "#efe3cd": ("Dourado", "#efe3cd"),
+    "#fae7cf": ("Dourado", "#fae7cf"),
+    "#faf6f2": ("Estelar", "#faf6f2"),
+    "#3b4c56": ("Meia-noite", "#3b4c56"),
+    "#a5aab8": ("Azul", "#a5aab8"),
+    "#b9b6d3": ("Roxo", "#b9b6d3"),
+    "#a6bda9": ("Verde", "#a6bda9"),
+    "#ecc5c0": ("Rose", "#ecc5c0"),
+    "#b40000": ("Vermelho", "#b40000"),
+}
+
+
+_CAP_TIERS = [8, 16, 32, 64, 128, 256, 512, 1024, 2048]
+
+
+def capacity_str(total_bytes):
+    """Bytes do disco -> capacidade comercial ('64 GB', '1 TB')."""
+    try:
+        gb = float(total_bytes) / 1e9
+    except (TypeError, ValueError):
+        return ""
+    if gb < 4:
+        return ""
+    nearest = min(_CAP_TIERS, key=lambda t: abs(t - gb))
+    if abs(nearest - gb) / nearest > 0.25:      # muito longe de um tier -> arredonda
+        nearest = int(round(gb))
+    return {1024: "1 TB", 2048: "2 TB"}.get(nearest, f"{nearest} GB")
+
+
+def color_info(code):
+    if not code:
+        return None, None
+    code = str(code).strip().lower()
+    override = CONFIG.get("color_names", {})
+    if code in override:
+        v = override[code]
+        if isinstance(v, (list, tuple)):
+            return v[0], (v[1] if len(v) > 1 else None)
+        return v, (code if code.startswith("#") else None)
+    if code in COLOR_NAMES:
+        return COLOR_NAMES[code]
+    if code.startswith("#") and len(code) in (4, 7):
+        return code.upper(), code            # cor desconhecida: usa o proprio hex
+    return f"cor {code}", None               # codigo numerico desconhecido
+
+
+def _json_default(o):
+    if isinstance(o, (bytes, bytearray)):
+        return o.hex()
+    return str(o)
+
+# ---------------------------------------------------------------------------
+# libimobiledevice helpers
+# ---------------------------------------------------------------------------
+
+def _tool(name):
+    exe = os.path.join(BIN_DIR, name + ".exe")
+    if not os.path.exists(exe):
+        raise FileNotFoundError(f"Nao encontrei {exe}. Extraia o vendor/libimobile.")
+    return exe
+
+
+def run_tool(name, args, timeout=25):
+    """Roda um utilitario libimobiledevice e devolve (rc, stdout_bytes, stderr_text)."""
+    try:
+        p = subprocess.run(
+            [_tool(name)] + args,
+            capture_output=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        return p.returncode, p.stdout, p.stderr.decode("utf-8", "replace")
+    except subprocess.TimeoutExpired:
+        return 124, b"", "timeout"
+    except Exception as e:
+        return 1, b"", str(e)
+
+
+def list_udids():
+    rc, out, err = run_tool("idevice_id", ["-l"], timeout=10)
+    if rc != 0:
+        return []
+    seen = []
+    for line in out.decode("utf-8", "replace").splitlines():
+        u = line.strip()
+        if u and u not in seen:
+            seen.append(u)
+    return seen
+
+
+def parse_plist_or_regex(raw_bytes):
+    """Tenta plist XML; se falhar, varre pares <key>/<valor> por regex."""
+    data = {}
+    try:
+        obj = plistlib.loads(raw_bytes)
+        if isinstance(obj, dict):
+            return _flatten(obj)
+    except Exception:
+        pass
+    text = raw_bytes.decode("utf-8", "replace")
+    for m in re.finditer(
+        r"<key>([^<]+)</key>\s*<(integer|real|string|true|false)\s*/?>(?:([^<]*)</\2>)?",
+        text,
+    ):
+        key, typ, val = m.group(1), m.group(2), m.group(3)
+        if typ == "true":
+            data[key] = True
+        elif typ == "false":
+            data[key] = False
+        elif typ in ("integer", "real"):
+            try:
+                data[key] = float(val) if typ == "real" else int(val)
+            except (TypeError, ValueError):
+                pass
+        else:
+            data[key] = (val or "").strip()
+    return data
+
+
+def _flatten(d, prefix=""):
+    flat = {}
+    for k, v in d.items():
+        key = f"{prefix}{k}"
+        if isinstance(v, dict):
+            flat.update(_flatten(v, key + "."))
+            # tambem guarda as chaves "folha" sem prefixo, util p/ bateria
+            flat.update(_flatten(v, ""))
+        else:
+            flat[key] = v
+    return flat
+
+
+def get_device_info(udid):
+    rec = {
+        "udid": udid,
+        "name": None,
+        "serial": None,
+        "model": None,
+        "model_name": None,
+        "capacity": None,
+        "color_code": None,
+        "color_name": None,
+        "color_hex": None,
+        "ios": None,
+        "battery_charge": None,      # % de carga atual
+        "battery_health": None,      # % de saude (capacidade maxima)
+        "cycle_count": None,
+        "paired": True,
+        "status": "ok",
+        "notes": [],
+        "raw_diag": {},
+        "updated": time.time(),
+    }
+
+    rc, out, err = run_tool("ideviceinfo", ["-u", udid, "-x"])
+    if rc != 0:
+        low = err.lower()
+        if "pair" in low or "trust" in low or "not paired" in low or "lockdown" in low:
+            rec["paired"] = False
+            rec["status"] = "pareamento"
+            rec["notes"].append("Desbloqueie o iPad e toque em CONFIAR neste computador.")
+        else:
+            rec["status"] = "erro"
+            rec["notes"].append(err.strip() or "falha ao ler o aparelho")
+        return rec
+
+    info = parse_plist_or_regex(out)
+    rec["name"] = info.get("DeviceName")
+    rec["serial"] = info.get("SerialNumber")
+    rec["model"] = info.get("ProductType")
+    rec["model_name"] = marketing_name(info.get("ProductType"),
+                                       info.get("MarketingName"))
+    rec["ios"] = info.get("ProductVersion")
+
+    code = str(info.get("DeviceEnclosureColor")
+               or info.get("DeviceColor") or "").strip()
+    rec["color_code"] = code or None
+    rec["color_name"], rec["color_hex"] = color_info(code)
+
+    # capacidade (memoria) do aparelho
+    cap_bytes = info.get("TotalDiskCapacity")
+    if cap_bytes is None:
+        rc2, out2, _ = run_tool(
+            "ideviceinfo", ["-u", udid, "-q", "com.apple.disk_usage", "-x"])
+        if rc2 == 0:
+            cap_bytes = parse_plist_or_regex(out2).get("TotalDiskCapacity")
+    rec["capacity"] = capacity_str(cap_bytes) or None
+
+    # carga atual
+    rc, out, err = run_tool(
+        "ideviceinfo", ["-u", udid, "-q", "com.apple.mobile.battery", "-x"]
+    )
+    if rc == 0:
+        batt = parse_plist_or_regex(out)
+        if "BatteryCurrentCapacity" in batt:
+            try:
+                rec["battery_charge"] = int(batt["BatteryCurrentCapacity"])
+            except (TypeError, ValueError):
+                pass
+
+    # saude + ciclos via interface de diagnostico
+    _fill_battery_diagnostics(udid, rec)
+
+    if rec["battery_health"] is None and rec["cycle_count"] is None:
+        rec["notes"].append(
+            "Este iPad nao entregou saude/ciclos pela interface de diagnostico "
+            "(comum em iPadOS 17+). Nº de serie funciona normalmente."
+        )
+    return rec
+
+
+# capacidade "cheia" atual, em mAh (NAO usar "MaxCapacity": costuma vir como 100 = %)
+CAP_KEYS_MAX = ["NominalChargeCapacity", "AppleRawMaxCapacity", "FullChargeCapacity"]
+CAP_KEYS_DESIGN = ["DesignCapacity", "AppleRawDesignCapacity"]
+
+
+def _fill_battery_diagnostics(udid, rec):
+    merged = {}
+    for combo in CONFIG.get("diagnostics_commands", []):
+        sub = combo[0]
+        args = ["-u", udid, sub] + list(combo[1:])
+        rc, out, err = run_tool("idevicediagnostics", args, timeout=25)
+        label = " ".join(combo)
+        if rc != 0:
+            rec["raw_diag"][label] = {"_erro": err.strip()[:200]}
+            continue
+        parsed = parse_plist_or_regex(out)
+        rec["raw_diag"][label] = parsed
+        for k, v in parsed.items():
+            if k not in merged:
+                merged[k] = v
+
+    # ciclos
+    for key in ("CycleCount", "BatteryCycleCount"):
+        if key in merged:
+            try:
+                rec["cycle_count"] = int(merged[key])
+                break
+            except (TypeError, ValueError):
+                pass
+
+    # saude = capacidade maxima / capacidade de projeto
+    if "BatteryHealthMetadata" in merged and isinstance(merged["BatteryHealthMetadata"], dict):
+        merged.update(merged["BatteryHealthMetadata"])
+
+    design = _first_number(merged, CAP_KEYS_DESIGN)
+    maxcap = _first_number(merged, CAP_KEYS_MAX)
+    if design and maxcap and design > 0:
+        pct = round(100.0 * maxcap / design)
+        if 1 <= pct <= 100:
+            rec["battery_health"] = pct
+
+    # alguns firmwares ja entregam a % pronta
+    if rec["battery_health"] is None:
+        for key in ("MaximumCapacityPercent", "BatteryHealthPercent", "StateOfHealth"):
+            if key in merged:
+                try:
+                    pct = round(float(merged[key]))
+                    if 1 <= pct <= 100:
+                        rec["battery_health"] = pct
+                        break
+                except (TypeError, ValueError):
+                    pass
+
+
+def _first_number(d, keys):
+    for k in keys:
+        if k in d:
+            try:
+                return float(d[k])
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def pair_device(udid):
+    rc, out, err = run_tool("idevicepair", ["-u", udid, "pair"], timeout=30)
+    msg = (out.decode("utf-8", "replace") + " " + err).strip()
+    return rc == 0, msg
+
+# ---------------------------------------------------------------------------
+# ZPL
+# ---------------------------------------------------------------------------
+
+def _ascii(s):
+    if s is None:
+        return ""
+    s = str(s)
+    if CONFIG["label"].get("strip_accents", True):
+        s = "".join(
+            c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
+        )
+    # tira aspas/barra (quebram a string entre aspas do EPL) e controles
+    s = s.replace('"', "").replace("\\", "").replace("\r", " ").replace("\n", " ")
+    return s.strip()
+
+
+# largura aproximada de um texto nas fontes internas EPL (pontos, 203 dpi)
+_EPL_FONT_CELL = {1: 8, 2: 10, 3: 12, 4: 14, 5: 48}
+
+
+def _epl_text_w(text, font, mult):
+    return len(text) * _EPL_FONT_CELL.get(int(font), 12) * int(mult)
+
+
+def _label_dims():
+    L = CONFIG["label"]
+    dpmm = L["dpmm"]
+    return int(L["width_mm"] * dpmm), int(L["height_mm"] * dpmm)
+
+
+def _est_code128_dots(text, narrow):
+    """Largura aproximada de um Code128 (subset B) em pontos."""
+    modules = 11 * (len(text) + 2) + 13   # start + dados + checksum + stop
+    return modules * max(1, int(narrow))
+
+
+def _fields(rec, copies):
+    L = CONFIG["label"]
+    if copies is None:
+        copies = L.get("copies_default", 1)
+    copies = max(1, min(int(copies), 50))
+    serial = _ascii(rec.get("serial") or "SEM-SERIE")
+    health = rec.get("battery_health")
+    cycles = rec.get("cycle_count")
+    model = _ascii(rec.get("model_name") or rec.get("model") or "")
+    cap = _ascii(rec.get("capacity") or "")
+    if cap and model:
+        model = f"{model} {cap}"
+    color = _ascii(rec.get("color_name") or "") if L.get("show_color", True) else ""
+    return {
+        "serial": serial,
+        "model": model,
+        "color": color,
+        "health": f"{health}%" if health is not None else "N/D",
+        "cycles": str(cycles) if cycles is not None else "N/D",
+        "copies": copies,
+    }
+
+
+def _texts(f):
+    """As 3 linhas de texto da etiqueta."""
+    top = f["model"]
+    if f["color"]:
+        top = f'{top} | {f["color"]}' if top else f["color"]
+    if CONFIG["label"].get("bottom_labels", True):
+        bottom = f'BT {f["health"]}     CC {f["cycles"]}'
+    else:
+        bottom = f'{f["health"]}     {f["cycles"]}'
+    return top, bottom
+
+
+def _layout(rec, copies):
+    """Pilha vertical centralizada:  MODELO | COR  /  codigo  /  BATERIA CICLOS."""
+    L = CONFIG["label"]
+    W, H = _label_dims()
+    f = _fields(rec, copies)
+    s = float(L.get("element_scale", 0.8))
+    ox, oy = int(L.get("offset_x", 0)), int(L.get("offset_y", 0))
+
+    top_px = max(8, round(30 * s))
+    bot_px = max(8, round(30 * s))
+    hr_px = max(8, round(24 * s))                      # texto do nº de serie
+    bc_h = max(24, round(int(L.get("barcode_height", 150)) * s))
+    module = max(1, int(L.get("barcode_module", 2)))
+    gap = round(16 * s)
+    pad = max(6, round(10 * s))
+
+    total = top_px + gap + bc_h + hr_px + gap + bot_px
+    y0 = max(pad, (H - total) // 2)
+    y_top = y0
+    y_bc = y_top + top_px + gap
+    y_bot = y_bc + bc_h + hr_px + gap
+
+    return dict(W=W, H=H, f=f, s=s, ox=ox, oy=oy, module=module,
+                top_px=top_px, bot_px=bot_px, hr_px=hr_px, bc_h=bc_h,
+                y_top=y_top, y_bc=y_bc, y_bot=y_bot, pad=pad)
+
+
+def build_label(rec, copies=None):
+    return (build_zpl(rec, copies) if resolve_language() == "zpl"
+            else build_epl(rec, copies))
+
+
+# --- fontes internas EPL: escolhe (font,mult) para uma altura alvo em pontos ---
+_EPL_FONTS = [((1, 1), 12), ((2, 1), 16), ((3, 1), 20), ((4, 1), 24),
+              ((2, 2), 32), ((3, 2), 40), ((4, 2), 48), ((3, 3), 60),
+              ((4, 3), 72), ((4, 4), 96)]
+
+
+def _epl_font(px):
+    best = ((1, 1), 12)
+    for fm, h in _EPL_FONTS:
+        if h <= px:
+            best = (fm, h)
+    return best[0]                       # (font, mult)
+
+
+def _epl_cell(font, mult):
+    return _EPL_FONT_CELL.get(int(font), 12) * int(mult)
+
+
+def _epl_fit(text, target_px, max_w):
+    """(font,mult) do tamanho alvo, mas reduz se o texto nao couber em max_w."""
+    font, mult = _epl_font(target_px)
+    while mult > 1 or font > 1:
+        if len(text) * _epl_cell(font, mult) <= max_w:
+            break
+        if mult > 1:
+            mult -= 1
+        else:
+            font -= 1
+    return font, mult
+
+
+def _cen(text, cell, W, ox):
+    return ox + max(0, (W - len(text) * cell) // 2)
+
+
+# --------------------------- EPL2 (padrao ELGIN) ----------------------------
+
+def build_epl(rec, copies=None):
+    L = CONFIG["label"]
+    g = _layout(rec, copies)
+    f = g["f"]
+    ox, oy, W = g["ox"], g["oy"], g["W"]
+    gap = int(L.get("gap_dots", 24))
+    narrow = g["module"]
+    wide = max(narrow * 2, narrow + 1)
+    top, bottom = _texts(f)
+
+    tfont, tmult = _epl_fit(top, g["top_px"], W - 8)
+    bfont, bmult = _epl_fit(bottom, g["bot_px"], W - 8)
+    if not L.get("text_bold", False):
+        # fontes EPL menores tem traco mais fino (sem multiplicador = sem "negrito")
+        tfont, tmult = min(tfont, 3), 1
+        bfont, bmult = min(bfont, 3), 1
+
+    bx = L.get("barcode_x")
+    if bx is None:
+        bx = max(0, (W - _est_code128_dots(f["serial"], narrow)) // 2)
+    bx = int(bx) + ox
+
+    orient = "ZB" if L.get("flip_180", True) else "ZT"
+    e = ["", "N", f"q{W}", f"Q{g['H']},{gap}",
+         f"S{int(L['print_speed'])}", f"D{int(L['darkness'])}", orient]
+    if top:
+        e.append(f'A{_cen(top, _epl_cell(tfont, tmult), W, ox)},{g["y_top"] + oy},'
+                 f'0,{tfont},{tmult},{tmult},N,"{top}"')
+    e.append(f'B{bx},{g["y_bc"] + oy},0,1,{narrow},{wide},{g["bc_h"]},B,"{f["serial"]}"')
+    e.append(f'A{_cen(bottom, _epl_cell(bfont, bmult), W, ox)},{g["y_bot"] + oy},'
+             f'0,{bfont},{bmult},{bmult},N,"{bottom}"')
+    e.append(f'P{f["copies"]}')
+    return "\r\n".join(e) + "\r\n"
+
+
+# ------------------------------- ZPL --------------------------------------
+
+def build_zpl(rec, copies=None):
+    L = CONFIG["label"]
+    g = _layout(rec, copies)
+    f = g["f"]
+    ox, oy, W = g["ox"], g["oy"], g["W"]
+    module = g["module"]
+    top, bottom = _texts(f)
+
+    bx = L.get("barcode_x")
+    if bx is None:
+        bx = max(0, (W - _est_code128_dots(f["serial"], module)) // 2)
+    bx = int(bx) + ox
+
+    def fit_px(text, px):
+        while px > 10 and len(text) * px * 0.62 > W - 8:
+            px -= 2
+        return px
+
+    z = ["^XA", "^CI28", f"^PW{W}", f"^LL{g['H']}", "^LH0,0",
+         ("^POI" if L.get("flip_180", True) else "^PON"),
+         f"^MD{int(L['darkness'])}", f"^PR{int(L['print_speed'])}"]
+    if top:
+        tp = fit_px(top, g["top_px"])
+        z.append(f"^FO{ox},{g['y_top'] + oy}^FB{W},1,0,C,0"
+                 f"^A0N,{tp},{tp}^FD{top}^FS")
+    z.append(f"^BY{module},2.0,{g['bc_h']}")
+    z.append(f"^FO{bx},{g['y_bc'] + oy}^BCN,{g['bc_h']},Y,N,N^FD{f['serial']}^FS")
+    bp = fit_px(bottom, g["bot_px"])
+    z.append(f"^FO{ox},{g['y_bot'] + oy}^FB{W},1,0,C,0"
+             f"^A0N,{bp},{bp}^FD{bottom}^FS")
+    z.append(f"^PQ{f['copies']}")
+    z.append("^XZ")
+    return "\r\n".join(z) + "\r\n"
+
+
+# --------------------------- etiqueta de teste ---------------------------
+
+def build_test_label():
+    """Moldura + cruz no centro + marcas de canto, para calibrar posicao."""
+    L = CONFIG["label"]
+    W, H = _label_dims()
+    ox = int(L.get("offset_x", 0))
+    oy = int(L.get("offset_y", 0))
+    gap = int(L.get("gap_dots", 24))
+    cx, cy = W // 2 + ox, H // 2 + oy
+    flip = L.get("flip_180", True)
+    if resolve_language() == "zpl":
+        z = ["^XA", f"^PW{W}", f"^LL{H}", "^LH0,0", ("^POI" if flip else "^PON"),
+             f"^MD{int(L['darkness'])}",
+             f"^FO{2+ox},{2+oy}^GB{W-4},{H-4},2^FS",
+             f"^FO{cx-20},{cy}^GB40,2,2^FS", f"^FO{cx},{cy-20}^GB2,40,2^FS",
+             f"^FO{8+ox},{8+oy}^A0N,22,22^FD{W}x{H} dots^FS",
+             f"^FO{8+ox},{H-34+oy}^A0N,22,22^FDoffset {ox},{oy}^FS",
+             "^PQ1", "^XZ"]
+        return "\r\n".join(z) + "\r\n"
+    e = ["", "N", f"q{W}", f"Q{H},{gap}", f"S{int(L['print_speed'])}",
+         f"D{int(L['darkness'])}", ("ZB" if flip else "ZT"),
+         f"X{2+ox},{2+oy},2,{W-2},{H-2}",
+         f"LO{cx-20},{cy},40,2", f"LO{cx},{cy-20},2,40",
+         f'A{8+ox},{8+oy},0,3,1,1,N,"{W}x{H} dots"',
+         f'A{8+ox},{H-30+oy},0,3,1,1,N,"offset {ox},{oy}"',
+         "P1"]
+    return "\r\n".join(e) + "\r\n"
+
+
+def print_raw(text):
+    tmp = os.path.join(BASE_DIR, "_last_label.txt")
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+    ps1 = os.path.join(BASE_DIR, "raw_print.ps1")
+    cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps1,
+           "-PrinterName", CONFIG["printer_name"], "-FilePath", tmp]
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=60,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    return p.returncode == 0, (p.stdout + "\n" + p.stderr).strip()
+
+# ---------------------------------------------------------------------------
+# Estado / poller
+# ---------------------------------------------------------------------------
+
+DEVICES = {}          # udid -> rec
+LOCK = threading.Lock()
+LAST_SCAN = 0.0
+
+
+def poller():
+    global LAST_SCAN
+    while True:
+        try:
+            udids = list_udids()
+            with LOCK:
+                for u in list(DEVICES):
+                    if u not in udids:
+                        del DEVICES[u]
+                for u in udids:
+                    if u not in DEVICES:
+                        DEVICES[u] = {"udid": u, "status": "lendo", "notes": [],
+                                      "name": None, "serial": None, "updated": 0}
+                now = time.time()
+                need = [u for u in udids
+                        if DEVICES[u].get("updated", 0) == 0
+                        or (DEVICES[u].get("status") in ("pareamento", "erro")
+                            and now - DEVICES[u]["updated"] > 8)
+                        or now - DEVICES[u]["updated"] > 300]
+            for u in need:
+                rec = get_device_info(u)
+                with LOCK:
+                    DEVICES[u] = rec
+            LAST_SCAN = time.time()
+        except Exception as e:
+            print(f"[poller] {e}")
+        time.sleep(max(1, int(CONFIG.get("poll_interval_seconds", 3))))
+
+# ---------------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------------
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "iPadEtiquetas/1.0"
+
+    def log_message(self, fmt, *args):
+        pass
+
+    def _send(self, code, body, ctype="application/json; charset=utf-8"):
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body, ensure_ascii=False,
+                              default=_json_default).encode("utf-8")
+        elif isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_json(self):
+        n = int(self.headers.get("Content-Length", 0) or 0)
+        if not n:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n).decode("utf-8"))
+        except Exception:
+            return {}
+
+    def _static(self, path):
+        if path in ("/", ""):
+            path = "/index.html"
+        if path.startswith("/static/"):
+            path = path[len("/static/"):]
+        full = os.path.normpath(os.path.join(STATIC_DIR, path.lstrip("/")))
+        if not full.startswith(STATIC_DIR) or not os.path.isfile(full):
+            self._send(404, {"erro": "nao encontrado"})
+            return
+        ext = os.path.splitext(full)[1].lower()
+        ctype = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "text/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".svg": "image/svg+xml",
+        }.get(ext, "application/octet-stream")
+        with open(full, "rb") as f:
+            self._send(200, f.read(), ctype)
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        q = parse_qs(u.query)
+        if u.path == "/api/devices":
+            with LOCK:
+                devs = [{k: v for k, v in DEVICES[key].items() if k != "raw_diag"}
+                        for key in sorted(DEVICES)]
+            self._send(200, {"devices": devs, "printer": CONFIG["printer_name"],
+                             "language_effective": resolve_language(),
+                             "label": CONFIG["label"], "last_scan": LAST_SCAN})
+        elif u.path == "/api/printers":
+            names = [p["name"] for p in refresh_printers()]
+            self._send(200, {"printers": names,
+                             "current": CONFIG.get("printer_name", ""),
+                             "language_effective": resolve_language()})
+        elif u.path in ("/api/label", "/api/zpl"):
+            udid = (q.get("udid") or [""])[0]
+            copies = int((q.get("copies") or ["1"])[0])
+            with LOCK:
+                rec = DEVICES.get(udid)
+            if not rec:
+                self._send(404, {"erro": "aparelho nao esta na lista"})
+                return
+            self._send(200, build_label(rec, copies), "text/plain; charset=utf-8")
+        elif u.path == "/api/debug":
+            udid = (q.get("udid") or [""])[0]
+            with LOCK:
+                rec = DEVICES.get(udid)
+            self._send(200, rec or {"erro": "nao encontrado"})
+        elif u.path.startswith("/api/"):
+            self._send(404, {"erro": "rota desconhecida"})
+        else:
+            self._static(u.path)
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        body = self._read_json()
+        if u.path == "/api/refresh":
+            with LOCK:
+                for r in DEVICES.values():
+                    r["updated"] = 0
+                    r["status"] = "lendo"      # caixa fica vermelha durante a releitura
+            self._send(200, {"ok": True})
+        elif u.path == "/api/pair":
+            udid = body.get("udid", "")
+            ok, msg = pair_device(udid)
+            with LOCK:
+                if udid in DEVICES:
+                    DEVICES[udid]["updated"] = 0
+            self._send(200, {"ok": ok, "msg": msg})
+        elif u.path == "/api/print":
+            udid = body.get("udid", "")
+            copies = body.get("copies", CONFIG["label"].get("copies_default", 1))
+            with LOCK:
+                rec = DEVICES.get(udid)
+            if not rec or not rec.get("serial"):
+                self._send(400, {"ok": False, "msg": "aparelho sem nº de serie lido ainda"})
+                return
+            data = build_label(rec, copies)
+            try:
+                ok, msg = print_raw(data)
+            except Exception as e:
+                ok, msg = False, str(e)
+            self._send(200, {"ok": ok, "msg": msg, "label": data})
+        elif u.path == "/api/print-bulk":
+            copies = body.get("copies", CONFIG["label"].get("copies_default", 1))
+            with LOCK:
+                if body.get("all"):
+                    targets = [k for k in sorted(DEVICES) if DEVICES[k].get("serial")]
+                else:
+                    targets = [x for x in (body.get("udids") or [])
+                               if x in DEVICES and DEVICES[x].get("serial")]
+                recs = [dict(DEVICES[x]) for x in targets]
+            results = []
+            for rec in recs:
+                try:
+                    ok, msg = print_raw(build_label(rec, copies))
+                except Exception as e:
+                    ok, msg = False, str(e)
+                results.append({"udid": rec["udid"], "ok": ok, "msg": msg})
+                time.sleep(0.4)          # respiro para o spooler / impressora
+            self._send(200, {"results": results})
+        elif u.path == "/api/test-print":
+            try:
+                ok, msg = print_raw(build_test_label())
+            except Exception as e:
+                ok, msg = False, str(e)
+            self._send(200, {"ok": ok, "msg": msg})
+        elif u.path == "/api/config":
+            # ajustes vindos da engrenagem; grava no config.json
+            lbl = CONFIG["label"]
+            for key in ("offset_x", "offset_y", "gap_dots", "darkness",
+                        "print_speed", "barcode_module", "language",
+                        "barcode_x", "element_scale", "show_color",
+                        "barcode_height", "bottom_labels", "flip_180",
+                        "text_bold"):
+                if key in body:
+                    lbl[key] = body[key]
+            if body.get("printer_name"):
+                CONFIG["printer_name"] = str(body["printer_name"])
+            ok = save_config()
+            self._send(200, {"ok": ok, "label": lbl,
+                             "printer": CONFIG["printer_name"],
+                             "language_effective": resolve_language()})
+        else:
+            self._send(404, {"erro": "rota desconhecida"})
+
+
+def _setup_logging():
+    """Sem console (pythonw / inicio automatico): joga tudo num arquivo."""
+    if sys.stdout and sys.stdout.isatty():
+        return
+    logpath = os.path.join(BASE_DIR, "server.log")
+    try:
+        if os.path.exists(logpath) and os.path.getsize(logpath) > 1_000_000:
+            os.replace(logpath, logpath + ".old")
+        f = open(logpath, "a", encoding="utf-8", buffering=1)
+        sys.stdout = f
+        sys.stderr = f
+    except Exception:
+        pass
+
+
+def main():
+    _setup_logging()
+    print("\n--- inicio %s ---" % time.strftime("%Y-%m-%d %H:%M:%S"))
+    if not os.path.isdir(BIN_DIR):
+        print(f"ERRO: pasta {BIN_DIR} nao existe (binarios libimobiledevice).")
+        sys.exit(1)
+    host = str(CONFIG.get("bind_host", "127.0.0.1"))
+    port = int(CONFIG.get("http_port", 8765))
+    try:
+        httpd = ThreadingHTTPServer((host, port), Handler)
+    except OSError as e:
+        print(f"Nao consegui abrir a porta {port} ({e}). "
+              f"Provavelmente o servidor ja esta rodando. Encerrando.")
+        sys.exit(0)
+    try:
+        ensure_printer_configured()
+    except Exception as e:
+        print(f"[impressoras] {e}")
+    threading.Thread(target=poller, daemon=True).start()
+    print("=" * 58)
+    print("  Etiqueta - NS  -  http://localhost:%d" % port)
+    print("  Impressora: %s  (%s)" % (CONFIG["printer_name"], resolve_language()))
+    print("=" * 58)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
