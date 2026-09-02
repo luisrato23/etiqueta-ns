@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.12.1"
+VERSION = "1.13.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -242,7 +242,7 @@ _UPDATING = False
 
 # arquivos que NUNCA sao sobrescritos por uma atualizacao
 _UPDATE_SKIP = {"config.json", "server.log", "server.log.old", "update.log",
-               "_last_label.txt", "_last_label.zpl"}
+               "_last_label.txt", "_last_label.zpl", "battery_cache.json"}
 
 
 def _copy_tree_over(src, dst):
@@ -600,26 +600,72 @@ def get_device_info(udid):
     return rec
 
 
-# capacidade "cheia" atual, em mAh (NAO usar "MaxCapacity": costuma vir como 100 = %)
-CAP_KEYS_MAX = ["NominalChargeCapacity", "AppleRawMaxCapacity", "FullChargeCapacity"]
 CAP_KEYS_DESIGN = ["DesignCapacity", "AppleRawDesignCapacity"]
+
+# cache persistente da saude por nº de serie (a interface de diagnostico e instavel;
+# AppleRawMaxCapacity oscila, entao guardamos o menor valor visto = como a Apple/3uTools).
+_BATT_CACHE_PATH = os.path.join(BASE_DIR, "battery_cache.json")
+_BATT_CACHE = None
+
+
+def _batt_cache():
+    global _BATT_CACHE
+    if _BATT_CACHE is None:
+        try:
+            with open(_BATT_CACHE_PATH, "r", encoding="utf-8") as f:
+                _BATT_CACHE = json.load(f)
+        except Exception:
+            _BATT_CACHE = {}
+    return _BATT_CACHE
+
+
+def _batt_cache_save():
+    try:
+        with open(_BATT_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(_BATT_CACHE, f)
+    except Exception:
+        pass
+
+
+def _diag(udid, sub_args, tries=3, timeout=20):
+    """Roda idevicediagnostics repetindo (a interface falha de vez em quando)."""
+    last = ""
+    for _ in range(tries):
+        rc, out, err = run_tool("idevicediagnostics", ["-u", udid] + list(sub_args),
+                                timeout=timeout)
+        if rc == 0 and out.strip():
+            p = parse_plist_or_regex(out)
+            if p:
+                return p, ""
+        last = (err or "").strip()[:200]
+        time.sleep(0.4)
+    return {}, last or "sem resposta"
 
 
 def _fill_battery_diagnostics(udid, rec):
     merged = {}
+    rawmax_samples = []
+    # so amostra varias vezes na 1a leitura desse aparelho (depois o minimo ja esta salvo)
+    first_read = (rec.get("serial") or "") not in _batt_cache()
+
     for combo in CONFIG.get("diagnostics_commands", []):
-        sub = combo[0]
-        args = ["-u", udid, sub] + list(combo[1:])
-        rc, out, err = run_tool("idevicediagnostics", args, timeout=25)
-        label = " ".join(combo)
-        if rc != 0:
-            rec["raw_diag"][label] = {"_erro": err.strip()[:200]}
-            continue
-        parsed = parse_plist_or_regex(out)
-        rec["raw_diag"][label] = parsed
-        for k, v in parsed.items():
-            if k not in merged:
-                merged[k] = v
+        # coleta amostras do AppleARMPMUCharger p/ estabilizar AppleRawMaxCapacity
+        n = 3 if (first_read and combo == ["ioregentry", "AppleARMPMUCharger"]) else 1
+        for i in range(n):
+            parsed, e = _diag(udid, combo, tries=(3 if i == 0 else 1))
+            if i == 0:
+                rec["raw_diag"][" ".join(combo)] = parsed if parsed else {"_erro": e}
+            for k, v in parsed.items():
+                merged.setdefault(k, v)
+            rm = parsed.get("AppleRawMaxCapacity")
+            if isinstance(rm, (int, float)) and rm > 0:
+                rawmax_samples.append(float(rm))
+            if n > 1 and i < n - 1:
+                time.sleep(0.3)
+
+    if isinstance(merged.get("BatteryHealthMetadata"), dict):
+        for k, v in merged["BatteryHealthMetadata"].items():
+            merged.setdefault(k, v)
 
     # ciclos
     for key in ("CycleCount", "BatteryCycleCount"):
@@ -630,28 +676,50 @@ def _fill_battery_diagnostics(udid, rec):
             except (TypeError, ValueError):
                 pass
 
-    # saude = capacidade maxima / capacidade de projeto
-    if "BatteryHealthMetadata" in merged and isinstance(merged["BatteryHealthMetadata"], dict):
-        merged.update(merged["BatteryHealthMetadata"])
-
     design = _first_number(merged, CAP_KEYS_DESIGN)
-    maxcap = _first_number(merged, CAP_KEYS_MAX)
-    if design and maxcap and design > 0:
-        pct = round(100.0 * maxcap / design)
-        if 1 <= pct <= 100:
-            rec["battery_health"] = pct
+    nominal = _first_number(merged, ["NominalChargeCapacity"])
+    rawmax = min(rawmax_samples) if rawmax_samples else _first_number(
+        merged, ["AppleRawMaxCapacity", "FullChargeCapacity"])
 
-    # alguns firmwares ja entregam a % pronta
-    if rec["battery_health"] is None:
+    h = _health_pct(rec.get("serial"), design, nominal, rawmax)
+    if h:
+        rec["battery_health"] = h
+    elif rec["battery_health"] is None:
         for key in ("MaximumCapacityPercent", "BatteryHealthPercent", "StateOfHealth"):
-            if key in merged:
-                try:
-                    pct = round(float(merged[key]))
-                    if 1 <= pct <= 100:
-                        rec["battery_health"] = pct
-                        break
-                except (TypeError, ValueError):
-                    pass
+            v = _first_number(merged, [key])
+            if v and 1 <= round(v) <= 100:
+                rec["battery_health"] = round(v)
+                break
+
+
+def _health_pct(serial, design, nominal, rawmax):
+    """Saude estavel, acompanhando Apple/3uTools:
+       usa NominalChargeCapacity quando existe; senao o MENOR AppleRawMaxCapacity
+       ja visto pra esse aparelho (bateria so perde capacidade)."""
+    if not design or design <= 0:
+        return None
+    cache = _batt_cache()
+    s = cache.get(serial or "", {})
+    s["design"] = design
+
+    if nominal and nominal > 0:
+        prev = s.get("nominal")
+        s["nominal"] = nominal if not prev else min(prev, nominal)
+    if rawmax and rawmax > 0:
+        prev = s.get("rawmax_min")
+        if prev and rawmax > prev * 1.07:      # subiu muito -> bateria trocada/recalibrada
+            prev = None
+        s["rawmax_min"] = rawmax if not prev else min(prev, rawmax)
+
+    if serial:
+        cache[serial] = s
+        _batt_cache_save()
+
+    cap = s.get("nominal") or s.get("rawmax_min")
+    if not cap:
+        return None
+    pct = round(100.0 * cap / design)
+    return pct if 1 <= pct <= 100 else None
 
 
 def _first_number(d, keys):

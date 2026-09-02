@@ -1,5 +1,6 @@
 # configuração local calibrada de cada máquina
 /config.json
+/battery_cache.json
 
 # runtime
 __pycache__/
