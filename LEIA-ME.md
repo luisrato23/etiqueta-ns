@@ -70,12 +70,18 @@ Fixe essa aba no navegador (botão direito na aba → *Fixar*) e ela fica lá.
 O driver USB da Apple (*Apple Mobile Device Support*) já está instalado nesta
 máquina. Se trocar de PC, instale o **Apple Devices** (Microsoft Store) ou o iTunes.
 
+### Atualizar
+
+Quando sai uma versão nova, aparece o botão **Atualizar** na barra de cima
+(e uma notificação). Um clique baixa do GitHub, troca os arquivos **sem mexer
+no `config.json`** e reinicia sozinho (~10 s). Também dá pra checar em
+**⚙ → Interface → Buscar atualização**.
+
 ## De onde vêm os dados
 
 | Dado | Fonte |
 |---|---|
-| Nº de série, modelo, iPadOS | `ideviceinfo` (lockdown) |
-| Carga atual (%) | `ideviceinfo -q com.apple.mobile.battery` |
+| Nº de série, modelo, capacidade, cor, iPadOS | `ideviceinfo` (lockdown) |
 | Saúde da bateria (%) e ciclos | `idevicediagnostics` (interface de diagnóstico) |
 
 Testado com um iPhone em iOS 26.5: saúde (92%) e ciclos (490) vieram certos pelo

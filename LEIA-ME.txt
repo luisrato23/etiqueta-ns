@@ -1,0 +1,75 @@
+========================================================
+  ETIQUETA - NS
+========================================================
+
+Le iPads / iPhones ligados no cabo USB e imprime uma etiqueta
+60x40 mm com:
+
+        Modelo  64 GB | Cor
+     [ codigo de barras do numero de serie ]
+            numero de serie
+        BT 88%   CC 141           (saude e ciclos da bateria)
+
+
+--------------------------------------------------------
+INSTALAR (uma vez)
+--------------------------------------------------------
+
+1) Instale o 3uTools (ou o iTunes, ou o "Apple Devices" da
+   Microsoft Store). E ele que faz o Windows conversar com o
+   iPad pela USB. Nao precisa deixar o 3uTools aberto.
+
+2) De dois cliques em  INSTALAR.bat
+   - se pedir, deixe instalar o Python;
+   - se ele instalar o Python, feche a janela e rode o
+     INSTALAR.bat de novo.
+
+3) Pronto. O sistema abre em  http://localhost:8765  e passa a
+   ligar sozinho toda vez que o Windows inicia.
+   Tem um atalho "Etiqueta - NS" na area de trabalho.
+
+
+--------------------------------------------------------
+USAR NO DIA A DIA
+--------------------------------------------------------
+
+- Abra o atalho "Etiqueta - NS" (ou http://localhost:8765).
+- Ligue os iPads no cabo (da para varios com um hub USB).
+  Cada um ocupa uma das 10 caixas.
+      caixa VERMELHA = lendo
+      caixa VERDE    = leitura pronta
+      caixa LARANJA  = falta tocar em CONFIAR no aparelho
+- Imprimir:
+      "Imprimir esta"                -> so aquela caixa
+      marque as caixas + "Imprimir selecionadas"
+      "Imprimir todas conectadas"    -> todas de uma vez
+
+--------------------------------------------------------
+CONFIGURACOES  (botao de engrenagem, canto superior direito)
+--------------------------------------------------------
+
+- Impressora:  escolha a sua impressora de etiquetas.
+- Linguagem:   deixe em "Automatico". Se sair errado, escolha
+               EPL (Elgin/Argox/TSC) ou ZPL (Zebra).
+- Tamanho / deslocar / escurecimento: acertam o encaixe na
+  etiqueta. Use "Imprimir etiqueta de teste" (sai uma moldura
+  com uma cruz no meio) e va ajustando.
+- Girar 180 graus: se a etiqueta sair de cabeca para baixo.
+
+
+--------------------------------------------------------
+PROBLEMAS
+--------------------------------------------------------
+
+- "Nenhum aparelho": instale o 3uTools/iTunes e troque o cabo
+  (tem que ser cabo de dados). Toque em CONFIAR no iPad.
+- Saude / ciclos como "N/D": alguns aparelhos nao entregam
+  esses dados pela USB. O numero de serie funciona igual.
+- Nao imprime: confira a impressora na engrenagem; veja se o
+  papel esta calibrado (segure o botao FEED da impressora
+  ~4 segundos com a etiqueta carregada).
+- Parar o servidor:   PARAR.bat
+- Ligar de novo:      INICIAR.bat  (mostra o log numa janela)
+- Registro de erros:  arquivo  server.log
+
+O sistema roda 100% na sua maquina. Nada e enviado para fora.
