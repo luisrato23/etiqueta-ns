@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.14.1"
+VERSION = "1.14.2"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -614,23 +614,29 @@ _BATT_CACHE_PATH = os.path.join(BASE_DIR, "battery_cache.json")
 _BATT_CACHE = None
 
 
+_BATT_CACHE_LOCK = threading.RLock()   # protege leitura/gravacao do cache (2 threads)
+
+
 def _batt_cache():
     global _BATT_CACHE
     if _BATT_CACHE is None:
-        try:
-            with open(_BATT_CACHE_PATH, "r", encoding="utf-8") as f:
-                _BATT_CACHE = json.load(f)
-        except Exception:
-            _BATT_CACHE = {}
+        with _BATT_CACHE_LOCK:
+            if _BATT_CACHE is None:
+                try:
+                    with open(_BATT_CACHE_PATH, "r", encoding="utf-8") as f:
+                        _BATT_CACHE = json.load(f)
+                except Exception:
+                    _BATT_CACHE = {}
     return _BATT_CACHE
 
 
 def _batt_cache_save():
-    try:
-        with open(_BATT_CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump(_BATT_CACHE, f)
-    except Exception:
-        pass
+    with _BATT_CACHE_LOCK:
+        try:
+            with open(_BATT_CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(_BATT_CACHE, f)
+        except Exception:
+            pass
 
 
 _DIAG_LOCK = threading.Lock()   # serializa chamadas idevicediagnostics (evita corrida USB)
@@ -652,27 +658,35 @@ def _diag(udid, sub_args, tries=3, timeout=20):
     return {}, last or "sem resposta"
 
 
+# fontes uteis de consultar (design/ciclo/capacidade)
 _CAP_HINT_KEYS = ("NominalChargeCapacity", "AppleRawMaxCapacity",
-                  "FullChargeCapacity", "DesignCapacity", "AppleRawDesignCapacity")
+                  "DesignCapacity", "AppleRawDesignCapacity", "CycleCount")
+# so estas dao o valor VIVO da capacidade em mAh (FullChargeCapacity vem em % em
+# varios iPads -> NAO confiavel). Light poll consulta so a fonte que tem uma destas.
+_LIVE_KEYS = ("NominalChargeCapacity", "AppleRawMaxCapacity")
 
 
 def _fill_battery_diagnostics(udid, rec, light=False):
-    """Preenche saude/ciclos. light=True: releitura rapida so da fonte que ja
-       funcionou, p/ o valor ir convergindo ao exato a cada poucos segundos."""
+    """Preenche saude/ciclos. light=True: releitura rapida so da fonte que
+       entrega o valor VIVO da capacidade, p/ convergir ao exato a cada poucos
+       segundos sem gastar chamada USB nas fontes so de ciclo/design."""
     serial = rec.get("serial") or ""
     st = _batt_cache().get(serial, {})
     samples_done = int(st.get("samples", 0))
+    have_design = bool(st.get("design"))
 
     all_combos = [list(c) for c in CONFIG.get("diagnostics_commands", [])]
     if light:
-        src = [c.split(" ") for c in st.get("src", []) if c]
-        combos = src or all_combos
+        # ja convergindo + design conhecido -> so a fonte do valor vivo
+        pick = st.get("live_src") if (have_design and st.get("live_src")) else st.get("src")
+        combos = [c.split(" ") for c in (pick or []) if c] or all_combos
     else:
         combos = all_combos
 
     merged = {}
     rawmax_samples = []
     good_src = set()
+    live_src = set()
     # re-amostra a fonte da capacidade algumas vezes enquanto o valor nao estabilizou
     resample = 3 if (samples_done < 6) else 1
 
@@ -689,6 +703,8 @@ def _fill_battery_diagnostics(udid, rec, light=False):
                 merged.setdefault(k, v)
             if any(k in parsed for k in _CAP_HINT_KEYS):
                 good_src.add(" ".join(combo))
+            if any(k in parsed for k in _LIVE_KEYS):
+                live_src.add(" ".join(combo))
             rm = parsed.get("AppleRawMaxCapacity")
             if isinstance(rm, (int, float)) and rm > 0:
                 rawmax_samples.append(float(rm))
@@ -715,14 +731,19 @@ def _fill_battery_diagnostics(udid, rec, light=False):
 
     design = _first_number(merged, CAP_KEYS_DESIGN)
     nominal = _first_number(merged, ["NominalChargeCapacity"])
-    rawmax = min(rawmax_samples) if rawmax_samples else _first_number(
-        merged, ["AppleRawMaxCapacity", "FullChargeCapacity"])
+    rawmax = min(rawmax_samples) if rawmax_samples else None
 
-    if serial and good_src:
-        cur = set(st.get("src", []))
-        st["src"] = sorted(cur | good_src)
-        _batt_cache()[serial] = st
-        _batt_cache_save()
+    if serial and (good_src or live_src):
+        with _BATT_CACHE_LOCK:
+            cache = _batt_cache()
+            cs = cache.get(serial, st)
+            if good_src:
+                cs["src"] = sorted(set(cs.get("src", [])) | good_src)
+            if live_src:
+                # leitura completa ve todas as fontes -> substitui; light so acrescenta
+                cs["live_src"] = sorted(live_src) if not light else \
+                    sorted(set(cs.get("live_src", [])) | live_src)
+            cache[serial] = cs
 
     h, settled, nsamp = _health_pct(serial, design, nominal, rawmax)
     if h:
@@ -743,53 +764,57 @@ def _health_pct(serial, design, nominal, rawmax):
        aparelho — esse valor oscila (picos pra cima), entao a cada releitura
        o minimo cai/estabiliza e converge pro numero exato (bateria so degrada).
        Retorna (pct, estabilizou, n_amostras)."""
-    cache = _batt_cache()
-    s = cache.get(serial or "", {})
-    if design and design > 0:
-        s["design"] = design
-    design = s.get("design") or design
-    if not design or design <= 0:
-        return None, False, int(s.get("samples", 0))
+    with _BATT_CACHE_LOCK:
+        cache = _batt_cache()
+        s = dict(cache.get(serial or "", {}))
+        before = dict(s)
+        if design and design > 0:
+            s["design"] = design
+        design = s.get("design") or design
+        if not design or design <= 0:
+            return None, False, int(s.get("samples", 0))
 
-    got = False
-    if nominal and nominal > 0:
-        prev = s.get("nominal")
-        s["nominal"] = nominal if not prev else min(prev, nominal)
-        got = True
-    if rawmax and rawmax > 0:
-        prev = s.get("rawmax_min")
-        if prev:
-            if rawmax > prev * 1.15:          # salto grande -> bateria trocada
-                prev = None
-            elif rawmax < prev * 0.93 and s.get("samples", 0) >= 4:
-                rawmax = None                 # leitura absurda -> descarta (glitch)
-        if rawmax:
-            s["rawmax_min"] = rawmax if not prev else min(prev, rawmax)
+        floor = design * 0.5   # abaixo disso e leitura de unidade errada (%, mV...), nao saude
+        got = False
+        if nominal and nominal > floor:
+            prev = s.get("nominal")
+            s["nominal"] = nominal if not prev else min(prev, nominal)
             got = True
+        if rawmax and rawmax > floor:
+            prev = s.get("rawmax_min")
+            if prev:
+                if rawmax > prev * 1.15:          # salto grande -> bateria trocada
+                    prev = None
+                elif rawmax < prev * 0.93 and s.get("samples", 0) >= 4:
+                    rawmax = None                 # leitura absurda -> descarta (glitch)
+            if rawmax:
+                s["rawmax_min"] = rawmax if not prev else min(prev, rawmax)
+                got = True
 
-    if got:
-        s["samples"] = int(s.get("samples", 0)) + 1
+        if got:
+            s["samples"] = min(int(s.get("samples", 0)) + 1, 999)
 
-    cap = s.get("nominal") or s.get("rawmax_min")
-    pct = None
-    if cap:
-        p = round(100.0 * cap / design)
-        if 1 <= p <= 100:
-            pct = p
+        cap = s.get("nominal") or s.get("rawmax_min")
+        pct = None
+        if cap:
+            p = round(100.0 * cap / design)
+            if 1 <= p <= 100:
+                pct = p
 
-    # estabilizou = mesmo valor por varias releituras seguidas
-    if pct == s.get("last_h"):
-        s["stable"] = int(s.get("stable", 0)) + (1 if got else 0)
-    else:
-        s["stable"] = 0
-    s["last_h"] = pct
-    settled = bool(s.get("nominal")) or (
-        s.get("stable", 0) >= 6 and s.get("samples", 0) >= 10)
+        # estabilizou = mesmo valor por varias releituras seguidas
+        if pct == s.get("last_h"):
+            s["stable"] = min(int(s.get("stable", 0)) + (1 if got else 0), 12)
+        else:
+            s["stable"] = 0
+        s["last_h"] = pct
+        settled = bool(s.get("nominal")) or (
+            s.get("stable", 0) >= 6 and s.get("samples", 0) >= 10)
 
-    if serial:
-        cache[serial] = s
-        _batt_cache_save()
-    return pct, settled, int(s.get("samples", 0))
+        if serial:
+            cache[serial] = s
+            if s != before:                      # so grava se algo mudou
+                _batt_cache_save()
+        return pct, settled, int(s.get("samples", 0))
 
 
 def _first_number(d, keys):
