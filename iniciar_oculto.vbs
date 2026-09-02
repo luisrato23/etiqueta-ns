@@ -1,13 +1,24 @@
 ' Sobe o Etiqueta - NS em segundo plano, sem janela.
-' Usado pela inicializacao automatica do Windows (e pode rodar manualmente).
-Dim sh, fso, here, pyw
+Dim sh, fso, here, pyw, cands, i
 Set sh  = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
 here = fso.GetParentFolderName(WScript.ScriptFullName)
 sh.CurrentDirectory = here
 
-' pythonw.exe: tenta o shim estavel do gerenciador; senao usa o do PATH
-pyw = sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\Python\bin\pythonw.exe")
-If Not fso.FileExists(pyw) Then pyw = "pythonw.exe"
+cands = Array( _
+  sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\Python\bin\pythonw.exe"), _
+  sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\Python\Python313\pythonw.exe"), _
+  sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe"), _
+  sh.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\Python\Python311\pythonw.exe"), _
+  sh.ExpandEnvironmentStrings("%PROGRAMFILES%\Python313\pythonw.exe"), _
+  sh.ExpandEnvironmentStrings("%PROGRAMFILES%\Python312\pythonw.exe"))
+
+pyw = "pythonw.exe"
+For i = 0 To UBound(cands)
+  If fso.FileExists(cands(i)) Then
+    pyw = cands(i)
+    Exit For
+  End If
+Next
 
 sh.Run """" & pyw & """ """ & here & "\server.py""", 0, False
