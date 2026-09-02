@@ -7,8 +7,11 @@ __pycache__/
 *.pyc
 /server.log
 /server.log.old
+/update.log
 /_last_label.txt
 /_last_label.zpl
+/_backup/
+/_update/
 
 # binários libimobiledevice — vão só no pacote de release (Etiqueta-NS.zip)
 /vendor/
