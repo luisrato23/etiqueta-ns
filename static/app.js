@@ -125,6 +125,8 @@ function makeSlot(i) {
   node.querySelector(".btn-cmd").addEventListener("click", stop(() => { showCmd(node.dataset.udid); closeMenus(); }));
   node.querySelector(".btn-copy").addEventListener("click", stop(() => copySerial(node)));
   node.querySelector(".btn-copy2").addEventListener("click", stop(() => { copySerial(node); closeMenus(); }));
+  node.querySelector(".btn-restart").addEventListener("click", stop(() => { closeMenus(); powerOne(node.dataset.udid, "restart"); }));
+  node.querySelector(".btn-power").addEventListener("click", stop(() => { closeMenus(); powerOne(node.dataset.udid, "shutdown"); }));
 
   const toggle = () => {
     if (!node.classList.contains("filled")) return;
@@ -187,7 +189,8 @@ function fillSlot(node, dev, slotNo) {
       : job === "fail" ? "Falhou"
         : st === "lendo" ? "Lendo"
           : st === "pareamento" ? "Confiar"
-            : st === "erro" ? "Erro" : "Pronta";
+            : st === "erro" ? "Erro"
+              : st === "desligando" ? "Desligando" : "Pronta";
 
   q(".dev-model").textContent = dev.model_name || dev.model || (st === "lendo" ? "Lendo dispositivo" : "Dispositivo");
   q(".dev-cap-badge").textContent = dev.capacity || "";
@@ -259,6 +262,7 @@ function syncSelection() {
   $("kpi-print").textContent = printCount;
   $("print-sel").disabled = selected.size === 0 || busyU.size > 0;
   $("print-all").disabled = conn === 0 || busyU.size > 0;
+  $("power-all").disabled = conn === 0 || busyU.size > 0;
 }
 
 function setPrinter(name, status, langEff) {
@@ -415,6 +419,27 @@ async function printMany(udids) {
   }
 }
 
+async function powerOne(udid, action) {
+  if (!udid) return;
+  const dev = devById.get(udid);
+  const n = slotOfUdid.get(udid) || "?";
+  const tag = `Slot ${String(n).padStart(2, "0")}`;
+  const nome = (dev && (dev.model_name || dev.model)) || "o aparelho";
+  const verbo = action === "restart" ? "Reiniciar" : "Desligar";
+  if (!confirm(`${verbo} ${nome} (${tag})?` +
+      (action === "shutdown" ? "\n\nEle só volta pelo botão físico de ligar." : ""))) return;
+  logAct(`${tag} · ${verbo.toLowerCase()}ando…`, "work");
+  try {
+    const r = await api("/api/power", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ udid, action }),
+    });
+    if (r.ok) { toast(`${tag} · ${verbo.toLowerCase()} enviado`, "ok"); logAct(`${tag} · ${verbo.toLowerCase()} ok`, "ok"); }
+    else { toast(`${tag} · ${r.msg || "falhou"}`, "err", 4000); logAct(`${tag} · falha ao ${verbo.toLowerCase()}: ${r.msg || ""}`, "err"); }
+  } catch (e) { toast("Falha ao " + verbo.toLowerCase(), "err"); }
+  poll();
+}
+
 async function pair(udid) {
   const n = slotOfUdid.get(udid) || "?";
   logAct(`Slot ${String(n).padStart(2, "0")} · pareando (confirme no aparelho)…`, "work");
@@ -445,6 +470,29 @@ $("sel-all").onclick = () => { for (const d of devById.values()) if (d.serial) s
 $("sel-none").onclick = () => { selected.clear(); syncSelection(); };
 $("print-sel").onclick = () => printMany([...selected]);
 $("print-all").onclick = () => printMany([...devById.values()].filter((d) => d.serial).map((d) => d.udid));
+
+$("power-all").onclick = async () => {
+  const conn = [...devById.values()].filter((d) => d.serial);
+  if (!conn.length) { toast("Nenhum aparelho conectado", "info", 1800); return; }
+  if (!confirm(`DESLIGAR todos os ${conn.length} aparelhos conectados?\n\n` +
+    `Cada um vai precisar do botão físico de ligar pra voltar.`)) return;
+  $("bulk-msg").textContent = `desligando ${conn.length}…`;
+  logAct(`Desligando todos (${conn.length})…`, "work");
+  try {
+    const r = await api("/api/power-all", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "shutdown" }),
+    });
+    const ok = (r.results || []).filter((x) => x.ok).length;
+    $("bulk-msg").textContent = `${ok}/${(r.results || []).length} desligado(s)`;
+    for (const x of r.results || []) if (!x.ok) {
+      const n = slotOfUdid.get(x.udid) || "?";
+      logAct(`Slot ${String(n).padStart(2, "0")} · não desligou: ${x.msg || ""}`, "err");
+    }
+    toast(`${ok} aparelho(s) desligado(s)`, ok ? "ok" : "err");
+  } catch (e) { $("bulk-msg").textContent = "erro: " + e; }
+  poll();
+};
 document.querySelectorAll(".stepper button[data-step]").forEach((b) => {
   b.onclick = () => {
     const i = $("copies");

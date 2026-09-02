@@ -77,6 +77,8 @@ body{
 .btn-2{border-color:var(--primary);color:var(--primary);background:var(--surface)}
 .btn-2:hover{background:var(--primary-weak)}
 .btn-warn{background:var(--warn-bg);border-color:var(--warn);color:var(--warn);font-weight:600}
+.btn-danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border-2))}
+.btn-danger:hover{background:var(--danger-bg);border-color:var(--danger)}
 .icon-btn{padding:7px;justify-content:center}
 .icon-btn .ic{font-size:1.05rem}
 .count{background:rgba(0,0,0,.16);color:inherit;border-radius:999px;
@@ -222,6 +224,9 @@ button.kpi:hover{border-color:var(--text-3)}
 .slot[data-st="pareamento"] .sp-dot{background:var(--warn)}
 .slot[data-st="erro"] .status-pill{background:var(--danger-bg);color:var(--danger)}
 .slot[data-st="erro"] .sp-dot{background:var(--danger)}
+.slot[data-st="desligando"] .status-pill{background:var(--warn-bg);color:var(--warn)}
+.slot[data-st="desligando"] .sp-dot{background:var(--warn);animation:pulse 1s infinite}
+.slot[data-st="desligando"]{opacity:.6}
 .slot[data-job="printing"] .status-pill{background:var(--primary-weak);color:var(--primary)}
 .slot[data-job="printing"] .sp-dot{background:var(--primary);animation:pulse .8s infinite}
 .slot[data-job="sent"] .status-pill{background:var(--ok-bg);color:var(--ok)}
@@ -286,6 +291,10 @@ button.kpi:hover{border-color:var(--text-3)}
   text-align:left;padding:8px 10px;border-radius:5px;cursor:pointer;display:flex;align-items:center;gap:8px}
 .slot-menu button:hover{background:var(--surface-2)}
 .slot-menu .ic{font-size:.95rem;color:var(--text-3)}
+.slot-menu hr{border:0;border-top:1px solid var(--line-soft);margin:4px 2px}
+.slot-menu .danger{color:var(--danger)}
+.slot-menu .danger .ic{color:var(--danger)}
+.slot-menu .danger:hover{background:var(--danger-bg)}
 
 /* progress bar (reading / printing) */
 .slot-progress{position:absolute;left:0;top:0;height:2.5px;width:100%;background:transparent;overflow:hidden;opacity:0;transition:opacity .2s}

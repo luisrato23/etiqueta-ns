@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.8.0"
+VERSION = "1.9.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -669,6 +669,23 @@ def pair_device(udid):
     msg = (out.decode("utf-8", "replace") + " " + err).strip()
     return rc == 0, msg
 
+
+def power_device(udid, action):
+    """action: shutdown | restart | sleep — via idevicediagnostics."""
+    if action not in ("shutdown", "restart", "sleep"):
+        return False, "acao invalida"
+    rc, out, err = run_tool("idevicediagnostics", ["-u", udid, action], timeout=20)
+    msg = (out.decode("utf-8", "replace") + " " + err).strip()
+    if rc == 0:
+        with LOCK:
+            if udid in DEVICES:
+                DEVICES[udid]["status"] = "desligando"
+        return True, msg or "ok"
+    low = msg.lower()
+    if "lock" in low or "passcode" in low or "unlock" in low:
+        return False, "desbloqueie o iPad e tente de novo"
+    return False, msg or "falhou"
+
 # ---------------------------------------------------------------------------
 # ZPL
 # ---------------------------------------------------------------------------
@@ -1075,6 +1092,20 @@ class Handler(BaseHTTPRequestHandler):
                 if udid in DEVICES:
                     DEVICES[udid]["updated"] = 0
             self._send(200, {"ok": ok, "msg": msg})
+        elif u.path == "/api/power":
+            action = body.get("action", "shutdown")
+            ok, msg = power_device(body.get("udid", ""), action)
+            self._send(200, {"ok": ok, "msg": msg})
+        elif u.path == "/api/power-all":
+            action = body.get("action", "shutdown")
+            with LOCK:
+                udids = [k for k in sorted(DEVICES) if DEVICES[k].get("serial")]
+            results = []
+            for x in udids:
+                ok, msg = power_device(x, action)
+                results.append({"udid": x, "ok": ok, "msg": msg})
+                time.sleep(0.3)
+            self._send(200, {"results": results})
         elif u.path == "/api/print":
             udid = body.get("udid", "")
             copies = body.get("copies", CONFIG["label"].get("copies_default", 1))
