@@ -44,6 +44,33 @@ function battTier(h) {
 }
 function icon(name) { return `<svg class="ic"><use href="#i-${name}"/></svg>`; }
 
+/* ====================== som ====================== */
+let soundOn = LS.get("sound", true);
+let audioCtx = null;
+function beep(freqs, dur = 0.13, vol = 0.22) {
+  if (!soundOn) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    let t = audioCtx.currentTime + 0.01;
+    for (const f of freqs) {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = "triangle"; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(t); o.stop(t + dur);
+      t += dur * 0.85;
+    }
+  } catch {}
+}
+const soundReady = () => beep([880, 1174.7]);          // "pronto" — sobe
+const soundError = () => beep([440, 330], 0.16, 0.16); // "erro" — desce, mais baixo
+window.addEventListener("pointerdown", () => {          // libera o áudio no 1º clique
+  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch {}
+}, { once: true });
+
 /* ====================== toast ====================== */
 function toast(msg, kind = "info", ms = 2600) {
   const t = document.createElement("div");
@@ -291,8 +318,12 @@ async function poll() {
         logAct(`Slot ${String(i + 1).padStart(2, "0")} · dispositivo conectado`, "work");
       } else if (prev === "lendo" && dev.status === "ok" && dev.serial) {
         logAct(`Slot ${String(i + 1).padStart(2, "0")} · ${dev.model_name || "leitura"} — pronta`, "ok");
+        soundReady();
       } else if (prev !== "erro" && dev.status === "erro") {
         logAct(`Slot ${String(i + 1).padStart(2, "0")} · falha na leitura`, "err");
+        soundError();
+      } else if (prev !== "pareamento" && dev.status === "pareamento") {
+        soundError();
       }
       prevStatus.set(dev.udid, dev.status);
     } else {
@@ -482,6 +513,7 @@ async function openCfg() {
   $("cf-auto").checked = autoUpdate;
   $("cf-interval").value = intervalSec;
   $("cf-autoupd").checked = autoUpd;
+  $("cf-sound").checked = soundOn;
   $("cf-lang").value = L.language || "auto";
   segSet("cf-theme", themeVal || "system");
   segSet("cf-uiscale", uiScaleVal || 100);
@@ -527,6 +559,7 @@ async function saveCfg(silent) {
   LS.set("interval", intervalSec);
   autoUpd = $("cf-autoupd").checked; LS.set("autoupd", autoUpd);
   if (autoUpd && verInfo && verInfo.update_available) scheduleAutoUpdate();
+  soundOn = $("cf-sound").checked; LS.set("sound", soundOn);
   startPolling();
 
   const r = await api("/api/config", {
@@ -561,6 +594,7 @@ document.querySelectorAll("#cf-theme button").forEach((b) => (b.onclick = () => 
 document.querySelectorAll("#cf-uiscale button").forEach((b) => (b.onclick = () => {
   uiScaleVal = Number(b.dataset.v); LS.set("uiscale", uiScaleVal); applyUiScale(uiScaleVal); segSet("cf-uiscale", uiScaleVal);
 }));
+$("cf-sound-test").onclick = (e) => { e.stopPropagation(); const s = soundOn; soundOn = true; soundReady(); soundOn = s; };
 
 /* ====================== atualização ====================== */
 let verInfo = null;
