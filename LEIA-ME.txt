@@ -68,8 +68,22 @@ PROBLEMAS
 - Nao imprime: confira a impressora na engrenagem; veja se o
   papel esta calibrado (segure o botao FEED da impressora
   ~4 segundos com a etiqueta carregada).
+- Antivirus reclamou de algum arquivo em vendor\libimobile:
+  e falso positivo dos utilitarios de leitura de iPad. Libere
+  a pasta no antivirus (ou restaure o arquivo da quarentena).
 - Parar o servidor:   PARAR.bat
 - Ligar de novo:      INICIAR.bat  (mostra o log numa janela)
 - Registro de erros:  arquivo  server.log
+
+
+--------------------------------------------------------
+ATUALIZAR
+--------------------------------------------------------
+
+Quando sair uma versao nova, o sino no topo fica vermelho e o
+sistema se atualiza sozinho (sem mexer nas configuracoes).
+Da pra desligar o automatico em Config > Interface, e ai
+atualizar clicando no sino.
+
 
 O sistema roda 100% na sua maquina. Nada e enviado para fora.
