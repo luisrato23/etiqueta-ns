@@ -163,9 +163,9 @@ function fillSlot(node, dev, slotNo) {
             : st === "erro" ? "Erro" : "Pronta";
 
   q(".dev-model").textContent = dev.model_name || dev.model || (st === "lendo" ? "Lendo dispositivo" : "Dispositivo");
+  q(".dev-cap-badge").textContent = dev.capacity || "";
 
   const spec = [];
-  if (dev.capacity) spec.push(dev.capacity);
   if (dev.color_name) spec.push(dev.color_name);
   if (dev.ios) spec.push((isPad ? "iPadOS " : "iOS ") + dev.ios);
   q(".dev-spec").innerHTML = spec.map((s) => `<span>${s}</span>`).join("");
@@ -173,11 +173,13 @@ function fillSlot(node, dev, slotNo) {
   q(".dev-serial").textContent = dev.serial || (st === "lendo" ? "lendo…" : "—");
 
   const reading = st === "lendo";
+  const h = dev.battery_health;
   const batt = q(".batt");
-  batt.className = "batt " + (reading ? "b-na" : battTier(dev.battery_health));
-  q(".batt-fill").style.setProperty("--pct", (dev.battery_health || 0) + "%");
+  batt.className = "batt " + (reading || h === null || h === undefined ? "b-na" : battTier(h));
+  const lvl = reading || h === null || h === undefined ? 2.5 : Math.max(2.5, 19 * h / 100);
+  q(".bt-lvl").setAttribute("width", lvl.toFixed(1));
   q(".batt-pct").textContent = reading ? "··"
-    : (dev.battery_health === null || dev.battery_health === undefined ? "N/D" : dev.battery_health + "%");
+    : (h === null || h === undefined ? "N/D" : h + "%");
   q(".m-cc").textContent = reading ? "—"
     : (dev.cycle_count === null || dev.cycle_count === undefined ? "N/D" : dev.cycle_count);
 

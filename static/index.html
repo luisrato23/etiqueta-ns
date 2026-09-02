@@ -128,7 +128,10 @@
         <span class="status-pill"><i class="sp-dot"></i><span class="sp-text">—</span></span>
       </div>
 
-      <h3 class="dev-model">—</h3>
+      <div class="dev-headline">
+        <h3 class="dev-model">—</h3>
+        <span class="dev-cap-badge num"></span>
+      </div>
       <p class="dev-spec"></p>
 
       <div class="serial-row">
@@ -138,10 +141,14 @@
       </div>
 
       <div class="batt">
-        <div class="batt-line">
-          <span class="batt-track"><span class="batt-fill"></span></span>
-          <span class="batt-pct num">—</span>
-        </div>
+        <span class="batt-ico" aria-hidden="true">
+          <svg viewBox="0 0 30 15" class="ic-batt">
+            <rect class="bt-shell" x="1" y="2" width="24" height="11" rx="2.6"/>
+            <rect class="bt-nub" x="26" y="5" width="3" height="5" rx="1"/>
+            <rect class="bt-lvl" x="3" y="4" width="6" height="7" rx="1"/>
+          </svg>
+        </span>
+        <span class="batt-pct num">—</span>
         <span class="batt-sub"><svg class="ic"><use href="#i-cycles"/></svg><span class="m-cc num">—</span> ciclos</span>
       </div>
 
