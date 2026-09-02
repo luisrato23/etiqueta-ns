@@ -567,6 +567,8 @@ async function openCfg() {
   $("cf-ox").value = L.offset_x ?? 0;
   $("cf-oy").value = L.offset_y ?? 0;
   $("cf-copies").value = L.copies_default ?? 1;
+  $("cf-h-mm").value = L.height_mm ?? 40;
+  $("cf-w-mm").value = L.width_mm ?? 60;
   $("cf-slots").value = ui.slots ?? SLOTS;
   $("cf-auto").checked = autoUpdate;
   $("cf-interval").value = intervalSec;
@@ -603,6 +605,8 @@ function cfgPayload() {
     offset_x: parseInt($("cf-ox").value || "0", 10),
     offset_y: parseInt($("cf-oy").value || "0", 10),
     copies_default: Math.max(1, Math.min(50, parseInt($("cf-copies").value || "1", 10))),
+    height_mm: Math.max(8, Math.min(200, parseFloat($("cf-h-mm").value) || 40)),
+    width_mm: Math.max(10, Math.min(200, parseFloat($("cf-w-mm").value) || 60)),
     ui: {
       slots: Math.max(2, Math.min(24, parseInt($("cf-slots").value || "10", 10))),
       theme: themeVal || "system",

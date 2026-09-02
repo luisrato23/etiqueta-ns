@@ -243,6 +243,15 @@
 
     <section data-panel="labels" hidden>
       <div class="fld-group">
+        <span class="fld-group-t">Tamanho da etiqueta (a que está na impressora)</span>
+        <div class="fld-cols">
+          <label class="fld">Altura <span class="fld-row"><input type="number" id="cf-h-mm" min="8" max="200" step="1"> mm</span></label>
+          <label class="fld">Largura <span class="fld-row"><input type="number" id="cf-w-mm" min="10" max="200" step="1"> mm</span></label>
+        </div>
+        <small class="hint">Padrão 40 × 60 mm. Depois de mudar, imprima a
+        <b>etiqueta de teste</b> (aba Impressora) e acerte o deslocamento.</small>
+      </div>
+      <div class="fld-group">
         <span class="fld-group-t">Campos exibidos na etiqueta</span>
         <label class="chk"><input type="checkbox" id="cf-color"> Cor do aparelho</label>
         <label class="chk"><input type="checkbox" id="cf-labels"> Rótulos “BT” / “CC”</label>

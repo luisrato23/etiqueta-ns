@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.11.0"
+VERSION = "1.12.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1163,9 +1163,15 @@ class Handler(BaseHTTPRequestHandler):
                         "print_speed", "barcode_module", "language",
                         "barcode_x", "element_scale", "show_color",
                         "barcode_height", "bottom_labels", "flip_180",
-                        "text_bold"):
+                        "text_bold", "width_mm", "height_mm"):
                 if key in body:
                     lbl[key] = body[key]
+            # tamanho da etiqueta em mm — limites de sanidade
+            for k, lo, hi in (("width_mm", 10, 200), ("height_mm", 8, 200)):
+                try:
+                    lbl[k] = max(lo, min(hi, float(lbl.get(k, 60 if "w" in k else 40))))
+                except (TypeError, ValueError):
+                    lbl[k] = 60 if "w" in k else 40
             if body.get("printer_name"):
                 CONFIG["printer_name"] = str(body["printer_name"])
             if isinstance(body.get("ui"), dict):
