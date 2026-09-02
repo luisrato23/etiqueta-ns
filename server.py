@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.7.0"
+VERSION = "1.7.1"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1011,6 +1011,9 @@ class Handler(BaseHTTPRequestHandler):
             ".js": "text/javascript; charset=utf-8",
             ".css": "text/css; charset=utf-8",
             ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".ico": "image/x-icon",
+            ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
         }.get(ext, "application/octet-stream")
         with open(full, "rb") as f:
             self._send(200, f.read(), ctype)
