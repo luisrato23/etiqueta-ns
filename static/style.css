@@ -79,11 +79,7 @@ body{
 .btn-warn{background:var(--warn-bg);border-color:var(--warn);color:var(--warn);font-weight:600}
 .btn-danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--border-2))}
 .btn-danger:hover{background:var(--danger-bg);border-color:var(--danger)}
-.btn-danger.armed{background:var(--danger);border-color:var(--danger);color:#fff;
-  animation:armed-ring 2.6s ease-in-out infinite}
-@keyframes armed-ring{
-  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 55%,transparent)}
-  55%{box-shadow:0 0 0 7px transparent}}
+.btn-danger:disabled{opacity:.55}
 .icon-btn{padding:7px;justify-content:center}
 .icon-btn .ic{font-size:1.05rem}
 .count{background:rgba(0,0,0,.16);color:inherit;border-radius:999px;

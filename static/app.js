@@ -467,25 +467,13 @@ $("sel-none").onclick = () => { selected.clear(); syncSelection(); };
 $("print-sel").onclick = () => printMany([...selected]);
 $("print-all").onclick = () => printMany([...devById.values()].filter((d) => d.serial).map((d) => d.udid));
 
-let powerAllArmed = null;
-function resetPowerAllBtn() {
-  $("power-all").innerHTML = icon("power") + " Desligar todos";
-}
 $("power-all").onclick = async () => {
   const btn = $("power-all");
   const conn = [...devById.values()].filter((d) => d.serial);
   if (!conn.length) { toast("Nenhum aparelho conectado", "info", 1800); return; }
+  if (btn.disabled) return;
 
-  // 2 cliques: 1º arma o botão por 4s, 2º confirma
-  if (!powerAllArmed) {
-    btn.classList.add("armed");
-    btn.innerHTML = icon("power") + ` Confirmar — desligar ${conn.length}`;
-    powerAllArmed = setTimeout(() => { powerAllArmed = null; btn.classList.remove("armed"); resetPowerAllBtn(); }, 4000);
-    return;
-  }
-  clearTimeout(powerAllArmed); powerAllArmed = null;
-  btn.classList.remove("armed"); resetPowerAllBtn();
-
+  btn.disabled = true;
   $("bulk-msg").textContent = `desligando ${conn.length}…`;
   logAct(`Desligando todos (${conn.length})…`, "work");
   try {
@@ -501,6 +489,7 @@ $("power-all").onclick = async () => {
     }
     toast(`${ok} aparelho(s) desligado(s)`, ok ? "ok" : "err");
   } catch (e) { $("bulk-msg").textContent = "erro: " + e; }
+  btn.disabled = false;
   poll();
 };
 document.querySelectorAll(".stepper button[data-step]").forEach((b) => {
