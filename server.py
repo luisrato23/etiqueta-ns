@@ -25,7 +25,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -263,10 +263,18 @@ def apply_update():
         root = os.path.join(updir, "Etiqueta-NS")
         if not os.path.isfile(os.path.join(root, "server.py")):
             raise RuntimeError("pacote invalido (server.py nao encontrado)")
-        if not os.path.isfile(bat):
-            raise RuntimeError("apply_update.bat nao encontrado na pasta")
+        src_bat = os.path.join(root, "apply_update.bat")
+        if not os.path.isfile(src_bat):
+            src_bat = bat
+        if not os.path.isfile(src_bat):
+            raise RuntimeError("apply_update.bat nao encontrado")
+        # roda a partir de uma copia com nome fixo, para o robocopy poder
+        # sobrescrever o apply_update.bat sem matar o script em execucao
+        runner = os.path.join(BASE_DIR, "_run_update.bat")
+        shutil.copy2(src_bat, runner)
+        port = str(CONFIG.get("http_port", 8765))
         subprocess.Popen(
-            ["cmd", "/c", bat], cwd=BASE_DIR,
+            ["cmd", "/c", runner, str(os.getpid()), port], cwd=BASE_DIR,
             creationflags=getattr(subprocess, "DETACHED_PROCESS", 0)
             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
         return True, "baixado"
