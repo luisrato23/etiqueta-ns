@@ -8,6 +8,7 @@ __pycache__/
 /server.log
 /server.log.old
 /update.log
+/_boot.log
 /_last_label.txt
 /_last_label.zpl
 /_backup/

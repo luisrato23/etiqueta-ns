@@ -14,6 +14,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -25,7 +26,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.14.2"
+VERSION = "1.14.3"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1193,18 +1194,28 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            # o navegador fechou a conexao no meio — normal, ignora
+            self.close_connection = True
+
     def _send(self, code, body, ctype="application/json; charset=utf-8"):
         if isinstance(body, (dict, list)):
             body = json.dumps(body, ensure_ascii=False,
                               default=_json_default).encode("utf-8")
         elif isinstance(body, str):
             body = body.encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            self.close_connection = True
 
     def _read_json(self):
         n = int(self.headers.get("Content-Length", 0) or 0)
@@ -1401,16 +1412,40 @@ def _setup_logging():
         pass
 
 
+class QuietServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        et = sys.exc_info()[0]
+        if et and issubclass(et, (ConnectionResetError, ConnectionAbortedError,
+                                  BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
+
+def _port_alive(host, port):
+    try:
+        with socket.create_connection((host, port), timeout=1.2):
+            return True
+    except OSError:
+        return False
+
+
 def main():
+    host = str(CONFIG.get("bind_host", "127.0.0.1"))
+    port = int(CONFIG.get("http_port", 8765))
+    # o watchdog (Tarefa Agendada) roda de tempos em tempos; se ja estamos no ar,
+    # sai em silencio p/ nao poluir o server.log.
+    if _port_alive(host, port):
+        return
     _setup_logging()
     print("\n--- inicio %s ---" % time.strftime("%Y-%m-%d %H:%M:%S"))
     if not os.path.isdir(BIN_DIR):
         print(f"ERRO: pasta {BIN_DIR} nao existe (binarios libimobiledevice).")
         sys.exit(1)
-    host = str(CONFIG.get("bind_host", "127.0.0.1"))
-    port = int(CONFIG.get("http_port", 8765))
     try:
-        httpd = ThreadingHTTPServer((host, port), Handler)
+        httpd = QuietServer((host, port), Handler)
     except OSError as e:
         print(f"Nao consegui abrir a porta {port} ({e}). "
               f"Provavelmente o servidor ja esta rodando. Encerrando.")
