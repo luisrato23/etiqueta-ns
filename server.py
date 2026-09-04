@@ -23,10 +23,11 @@ import unicodedata
 import plistlib
 import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.14.3"
+VERSION = "1.15.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -640,14 +641,28 @@ def _batt_cache_save():
             pass
 
 
-_DIAG_LOCK = threading.Lock()   # serializa chamadas idevicediagnostics (evita corrida USB)
+# trava POR APARELHO: serializa 2 chamadas ao MESMO udid (a leitura completa e a
+# releitura rapida da bateria podem coincidir), mas deixa aparelhos DIFERENTES
+# rodarem em paralelo de verdade — e o que faz varios iPads ficarem prontos juntos
+# em vez de um de cada vez.
+_DIAG_LOCKS_GUARD = threading.Lock()
+_DIAG_LOCKS = {}
+
+
+def _diag_lock(udid):
+    with _DIAG_LOCKS_GUARD:
+        lk = _DIAG_LOCKS.get(udid)
+        if lk is None:
+            lk = threading.Lock()
+            _DIAG_LOCKS[udid] = lk
+        return lk
 
 
 def _diag(udid, sub_args, tries=3, timeout=20):
     """Roda idevicediagnostics repetindo (a interface falha de vez em quando)."""
     last = ""
     for _ in range(tries):
-        with _DIAG_LOCK:
+        with _diag_lock(udid):
             rc, out, err = run_tool("idevicediagnostics", ["-u", udid] + list(sub_args),
                                     timeout=timeout)
         if rc == 0 and out.strip():
@@ -1112,6 +1127,10 @@ DEVICES = {}          # udid -> rec
 LOCK = threading.Lock()
 LAST_SCAN = 0.0
 
+# le varios aparelhos AO MESMO TEMPO (cada um e uma sessao USB independente) em
+# vez de um de cada vez — e o que faz N iPads ficarem prontos juntos, nao em fila.
+_IO_POOL = ThreadPoolExecutor(max_workers=6, thread_name_prefix="io")
+
 
 def poller():
     global LAST_SCAN
@@ -1136,10 +1155,17 @@ def poller():
                         or (DEVICES[u].get("status") in ("pareamento", "erro")
                             and now - DEVICES[u]["updated"] > 8)
                         or now - DEVICES[u]["updated"] > 300]
-            for u in need:
-                rec = get_device_info(u)
-                with LOCK:
-                    DEVICES[u] = rec
+            if need:
+                futs = {_IO_POOL.submit(get_device_info, u): u for u in need}
+                for fut in as_completed(futs):
+                    u = futs[fut]
+                    try:
+                        rec = fut.result()
+                    except Exception as e:
+                        print(f"[poller] {u[:8]} {e}")
+                        continue
+                    with LOCK:
+                        DEVICES[u] = rec      # aplica assim que CADA aparelho termina
             LAST_SCAN = time.time()
         except Exception as e:
             print(f"[poller] {e}")
@@ -1150,7 +1176,8 @@ def battery_poller():
     """Leitura CONTINUA da bateria (saude/ciclos) enquanto o aparelho esta
        conectado: re-amostra a capacidade a cada `battery_poll_seconds` sem
        parar, mesmo depois de estabilizar, entao o valor fica sempre exato e
-       acompanha qualquer variacao. Nao mexe no status do card nem toca som."""
+       acompanha qualquer variacao. Roda todos os aparelhos em paralelo.
+       Nao mexe no status do card nem toca som."""
     while True:
         wait = 2
         try:
@@ -1160,26 +1187,33 @@ def battery_poller():
                 targets = [u for u, r in DEVICES.items()
                            if r.get("status") == "ok" and r.get("serial")
                            and now - r.get("batt_updated", 0) >= every]
+            bases = {}
             for u in targets:
                 with LOCK:
                     base = dict(DEVICES.get(u, {}))
-                if not base.get("serial"):
-                    continue
-                base["raw_diag"] = {}
-                try:
-                    _fill_battery_diagnostics(u, base, light=True)
-                except Exception as e:
-                    print(f"[batt] {u[:8]} {e}")
-                    continue
-                with LOCK:
-                    d = DEVICES.get(u)
-                    if d and d.get("serial") == base.get("serial"):
-                        d["battery_health"] = base.get("battery_health")
-                        d["cycle_count"] = base.get("cycle_count")
-                        d["batt_samples"] = base.get("batt_samples", 0)
-                        d["batt_settled"] = base.get("batt_settled", False)
-                        d["raw_diag"] = base.get("raw_diag") or d.get("raw_diag", {})
-                        d["batt_updated"] = time.time()
+                if base.get("serial"):
+                    base["raw_diag"] = {}
+                    bases[u] = base
+            if bases:
+                futs = {_IO_POOL.submit(_fill_battery_diagnostics, u, base, True): u
+                        for u, base in bases.items()}
+                for fut in as_completed(futs):
+                    u = futs[fut]
+                    base = bases[u]
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        print(f"[batt] {u[:8]} {e}")
+                        continue
+                    with LOCK:
+                        d = DEVICES.get(u)
+                        if d and d.get("serial") == base.get("serial"):
+                            d["battery_health"] = base.get("battery_health")
+                            d["cycle_count"] = base.get("cycle_count")
+                            d["batt_samples"] = base.get("batt_samples", 0)
+                            d["batt_settled"] = base.get("batt_settled", False)
+                            d["raw_diag"] = base.get("raw_diag") or d.get("raw_diag", {})
+                            d["batt_updated"] = time.time()
         except Exception as e:
             print(f"[batt] {e}")
         time.sleep(wait)
