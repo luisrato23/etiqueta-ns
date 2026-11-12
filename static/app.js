@@ -129,6 +129,57 @@ function makeSlot(i) {
   node.querySelector(".btn-restart").addEventListener("click", stop(() => { closeMenus(); powerOne(node.dataset.udid, "restart"); }));
   node.querySelector(".btn-power").addEventListener("click", stop(() => { closeMenus(); powerOne(node.dataset.udid, "shutdown"); }));
 
+  // ---- correção manual da saúde da bateria ----
+  const batt = node.querySelector(".batt");
+  const bEditor = node.querySelector(".batt-editor");
+  const bInput = node.querySelector(".batt-input");
+  const bAuto = node.querySelector(".batt-auto");
+  const endEdit = () => { delete node.dataset.battEditing; batt.classList.remove("editing"); bEditor.hidden = true; };
+  const startEdit = () => {
+    const dev = devById.get(node.dataset.udid);
+    if (!dev || !dev.serial) return;
+    node.dataset.battEditing = "1";
+    batt.classList.add("editing");
+    bEditor.hidden = false;
+    bInput.value = dev.battery_health ?? "";
+    bAuto.hidden = !dev.batt_override;
+    bInput.focus(); bInput.select();
+  };
+  const saveBatt = async (value) => {          // value: 1-100, ou null = voltar ao automático
+    const udid = node.dataset.udid;
+    if (value !== null && !(Number.isInteger(value) && value >= 1 && value <= 100)) {
+      toast("Informe a saúde entre 1 e 100", "err", 2200); bInput.focus(); return;
+    }
+    const tag = `Slot ${String(slotOfUdid.get(udid) || "?").padStart(2, "0")}`;
+    try {
+      const r = await api("/api/battery", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ udid, health: value }),
+      });
+      if (!r.ok) { toast(r.msg || "Não foi possível salvar", "err", 3000); return; }
+      endEdit();
+      if (typeof r.health === "number") prevHealth.set(udid, r.health);   // evita log duplicado de "ajustada"
+      if (value === null) {
+        logAct(`${tag} · saúde voltou ao valor lido (${r.health != null ? r.health + "%" : "N/D"})`, "info");
+        toast(`${tag} · saúde automática`, "ok", 1800);
+      } else {
+        logAct(`${tag} · saúde corrigida para ${value}%${r.auto != null ? ` (lido: ${r.auto}%)` : ""}`, "ok");
+        toast(`${tag} · saúde ajustada para ${value}%`, "ok", 1800);
+      }
+      poll();
+    } catch (e) { toast("Falha ao salvar a saúde", "err"); }
+  };
+  node.querySelector(".batt-edit-btn").addEventListener("click", stop(startEdit));
+  node.querySelector(".btn-batt").addEventListener("click", stop(() => { closeMenus(); startEdit(); }));
+  node.querySelector(".batt-save").addEventListener("click", stop(() => saveBatt(parseInt(bInput.value, 10))));
+  bAuto.addEventListener("click", stop(() => saveBatt(null)));
+  node.querySelector(".batt-cancel").addEventListener("click", stop(endEdit));
+  bInput.addEventListener("keydown", (e) => {
+    e.stopPropagation();                        // espaço/Enter aqui não selecionam o card
+    if (e.key === "Enter") { e.preventDefault(); saveBatt(parseInt(bInput.value, 10)); }
+    else if (e.key === "Escape") { e.preventDefault(); endEdit(); }
+  });
+
   const toggle = () => {
     if (!node.classList.contains("filled")) return;
     const u = node.dataset.udid;
@@ -136,11 +187,11 @@ function makeSlot(i) {
     syncSelection();
   };
   node.addEventListener("click", (e) => {
-    if (e.target.closest("button, input, .slot-menu")) return;
+    if (e.target.closest("button, input, .slot-menu, .batt-editor")) return;
     toggle();
   });
   node.addEventListener("keydown", (e) => {
-    if ((e.key === " " || e.key === "Enter") && !e.target.closest("button")) { e.preventDefault(); toggle(); }
+    if ((e.key === " " || e.key === "Enter") && !e.target.closest("button, input")) { e.preventDefault(); toggle(); }
   });
 
   grid.appendChild(node);
@@ -170,6 +221,11 @@ function copySerial(node) {
 
 function fillSlot(node, dev, slotNo) {
   const wasNew = !node.classList.contains("filled");
+  // se a lista de aparelhos mudou e este slot passou a mostrar OUTRO iPad, cancela a edição aberta
+  if (node.dataset.battEditing && node.dataset.udid && node.dataset.udid !== dev.udid) {
+    delete node.dataset.battEditing;
+    node.querySelector(".batt-editor").hidden = true;
+  }
   node.classList.add("filled");
   node.dataset.udid = dev.udid;
   slotOfUdid.set(dev.udid, slotNo);
@@ -206,14 +262,24 @@ function fillSlot(node, dev, slotNo) {
   const reading = st === "lendo";
   const h = dev.battery_health;
   const batt = q(".batt");
-  batt.className = "batt " + (reading || h === null || h === undefined ? "b-na" : battTier(h));
+  const editing = !!node.dataset.battEditing;
+  const edited = !!dev.batt_override;
+  batt.className = "batt " + (reading || h === null || h === undefined ? "b-na" : battTier(h))
+    + (editing ? " editing" : "") + (edited ? " edited" : "");
   const lvl = reading || h === null || h === undefined ? 2.5 : Math.max(2.5, 19 * h / 100);
   q(".bt-lvl").setAttribute("width", lvl.toFixed(1));
   q(".batt-pct").textContent = reading ? "··"
     : (h === null || h === undefined ? "N/D" : h + "%");
   const known = !reading && h !== null && h !== undefined;
+  // lápis de correção: aparece quando o aparelho já tem nº de série; marcado quando o valor foi corrigido a mão
+  const eb = q(".batt-edit-btn");
+  eb.hidden = reading || !dev.serial;
+  eb.classList.toggle("on", edited);
+  const autoTxt = dev.batt_auto != null ? ` · lido do aparelho: ${dev.batt_auto}%` : "";
+  eb.title = edited ? `Corrigido manualmente${autoTxt} — clique para editar` : "Corrigir saúde da bateria";
+  q(".batt-pct").title = edited ? `Corrigido manualmente${autoTxt}` : "";
   const bl = q(".batt-live");
-  bl.hidden = !known;
+  bl.hidden = !known || edited;                 // com correção manual o ponto "ao vivo" não se aplica à %
   bl.classList.toggle("measuring", known && dev.batt_settled === false);
   const bAgo = dev.batt_updated ? Math.max(0, Math.round(Date.now() / 1000 - dev.batt_updated)) : null;
   bl.title = known
@@ -244,6 +310,9 @@ function clearSlot(node) {
     if (u) { selected.delete(u); jobState.delete(u); }
   }
   node.classList.remove("filled", "selected", "just-in");
+  delete node.dataset.battEditing;
+  const be = node.querySelector(".batt-editor");
+  if (be) be.hidden = true;
   node.removeAttribute("data-st");
   node.removeAttribute("data-job");
   delete node.dataset.udid;

@@ -27,7 +27,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
-VERSION = "1.15.0"
+VERSION = "1.16.0"
 GITHUB_REPO = "luisrato23/etiqueta-ns"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -555,6 +555,8 @@ def get_device_info(udid):
         "batt_updated": 0,           # ultima releitura da bateria (epoch)
         "batt_samples": 0,           # nº de amostras acumuladas p/ convergir
         "batt_settled": False,       # True quando o valor ja estabilizou
+        "batt_auto": None,           # saude lida/calculada do aparelho (sem correcao manual)
+        "batt_override": False,      # True = o valor mostrado foi corrigido a mao
         "paired": True,
         "status": "ok",
         "notes": [],
@@ -762,16 +764,58 @@ def _fill_battery_diagnostics(udid, rec, light=False):
             cache[serial] = cs
 
     h, settled, nsamp = _health_pct(serial, design, nominal, rawmax)
-    if h:
-        rec["battery_health"] = h
-    elif rec.get("battery_health") is None:
+    auto = h or None
+    if auto is None and rec.get("batt_auto") is None:
         for key in ("MaximumCapacityPercent", "BatteryHealthPercent", "StateOfHealth"):
             v = _first_number(merged, [key])
             if v and 1 <= round(v) <= 100:
-                rec["battery_health"] = round(v)
+                auto = round(v)
                 break
+    if auto is not None:
+        rec["batt_auto"] = auto
     rec["batt_samples"] = nsamp
     rec["batt_settled"] = settled
+    _apply_batt_override(rec)
+
+
+def get_batt_override(serial):
+    """Saude corrigida a mao p/ esse nº de serie (1-100) ou None."""
+    if not serial:
+        return None
+    with _BATT_CACHE_LOCK:
+        v = _batt_cache().get(serial, {}).get("override")
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        return None
+    return v if 1 <= v <= 100 else None
+
+
+def set_batt_override(serial, pct):
+    """Grava (pct 1-100) ou remove (pct=None) a correcao manual da saude."""
+    with _BATT_CACHE_LOCK:
+        cache = _batt_cache()
+        s = dict(cache.get(serial, {}))
+        if pct is None:
+            s.pop("override", None)
+            s.pop("override_at", None)
+        else:
+            s["override"] = int(pct)
+            s["override_at"] = int(time.time())
+        cache[serial] = s
+        _batt_cache_save()
+
+
+def _apply_batt_override(rec):
+    """Poe em rec["battery_health"] o valor certo: a correcao manual (se houver)
+       tem prioridade sobre o valor lido do aparelho. A leitura continua rodando
+       e fica em rec["batt_auto"] so como referencia."""
+    ov = get_batt_override(rec.get("serial"))
+    rec["batt_override"] = ov is not None
+    if ov is not None:
+        rec["battery_health"] = ov
+    else:
+        rec["battery_health"] = rec.get("batt_auto")
 
 
 def _health_pct(serial, design, nominal, rawmax):
@@ -1209,6 +1253,8 @@ def battery_poller():
                         d = DEVICES.get(u)
                         if d and d.get("serial") == base.get("serial"):
                             d["battery_health"] = base.get("battery_health")
+                            d["batt_auto"] = base.get("batt_auto")
+                            d["batt_override"] = base.get("batt_override", False)
                             d["cycle_count"] = base.get("cycle_count")
                             d["batt_samples"] = base.get("batt_samples", 0)
                             d["batt_settled"] = base.get("batt_settled", False)
@@ -1343,6 +1389,35 @@ class Handler(BaseHTTPRequestHandler):
             action = body.get("action", "shutdown")
             ok, msg = power_device(body.get("udid", ""), action)
             self._send(200, {"ok": ok, "msg": msg})
+        elif u.path == "/api/battery":
+            # corrige a saude da bateria a mao: {udid, health: 1-100} ou health=null p/ voltar ao automatico
+            udid = body.get("udid", "")
+            with LOCK:
+                rec = DEVICES.get(udid)
+                serial = rec.get("serial") if rec else None
+            if not serial:
+                self._send(400, {"ok": False, "msg": "aparelho sem nº de serie lido ainda"})
+                return
+            raw = body.get("health")
+            pct = None
+            if raw not in (None, "", "auto"):
+                try:
+                    pct = int(round(float(raw)))
+                except (TypeError, ValueError):
+                    pct = -1
+                if not 1 <= pct <= 100:
+                    self._send(400, {"ok": False, "msg": "saude deve estar entre 1 e 100"})
+                    return
+            set_batt_override(serial, pct)
+            with LOCK:
+                d = DEVICES.get(udid)
+                if d and d.get("serial") == serial:
+                    _apply_batt_override(d)       # reflete na hora, sem esperar a releitura
+                    out = {"ok": True, "health": d.get("battery_health"),
+                           "auto": d.get("batt_auto"), "override": d.get("batt_override")}
+                else:
+                    out = {"ok": True, "health": pct, "auto": None, "override": pct is not None}
+            self._send(200, out)
         elif u.path == "/api/print":
             udid = body.get("udid", "")
             copies = body.get("copies", CONFIG["label"].get("copies_default", 1))

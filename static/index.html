@@ -33,6 +33,7 @@
     <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></symbol>
     <symbol id="i-ok-circle" viewBox="0 0 24 24"><path d="M21.8 10A10 10 0 1 1 17 3.3"/><path d="m9 11 3 3L22 4"/></symbol>
     <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol>
     <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
     <symbol id="i-hdd" viewBox="0 0 24 24"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/></symbol>
@@ -160,6 +161,14 @@
           </svg>
         </span>
         <span class="batt-pct num">—</span>
+        <button class="batt-edit-btn" type="button" title="Corrigir saúde da bateria" aria-label="Corrigir saúde da bateria" hidden><svg class="ic"><use href="#i-pencil"/></svg></button>
+        <span class="batt-editor" hidden>
+          <input class="batt-input num" type="number" min="1" max="100" step="1" inputmode="numeric" aria-label="Saúde da bateria em %">
+          <span class="batt-sign">%</span>
+          <button class="batt-mini batt-save" type="button" title="Salvar (Enter)" aria-label="Salvar"><svg class="ic"><use href="#i-check"/></svg></button>
+          <button class="batt-mini batt-auto" type="button" title="Voltar ao valor lido do aparelho" aria-label="Voltar ao automático" hidden><svg class="ic"><use href="#i-refresh"/></svg></button>
+          <button class="batt-mini batt-cancel" type="button" title="Cancelar (Esc)" aria-label="Cancelar"><svg class="ic"><use href="#i-x"/></svg></button>
+        </span>
         <span class="batt-live" title="Leitura ao vivo" hidden><i class="live-dot"></i></span>
         <span class="batt-sub"><svg class="ic"><use href="#i-cycles"/></svg><span class="m-cc num">—</span> ciclos</span>
       </div>
@@ -181,6 +190,7 @@
       <div class="slot-menu" hidden>
         <button class="btn-cmd"><svg class="ic"><use href="#i-terminal"/></svg> Ver comando</button>
         <button class="btn-copy2"><svg class="ic"><use href="#i-copy"/></svg> Copiar nº de série</button>
+        <button class="btn-batt"><svg class="ic"><use href="#i-pencil"/></svg> Corrigir saúde da bateria</button>
         <hr>
         <button class="btn-restart"><svg class="ic"><use href="#i-cycles"/></svg> Reiniciar aparelho</button>
         <button class="btn-power danger"><svg class="ic"><use href="#i-power"/></svg> Desligar aparelho</button>
